@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{c3b6e5b0-6e0a-4a6e-9f3a-2f6b1c8a9d4e}</ProjectGuid>
+    <RootNamespace>yamlcpp</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)temp\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)temp\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;YAML_CPP_STATIC_DEFINE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>..\src\yaml-cpp-0.9.0\include;..\src\yaml-cpp-0.9.0\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- Vendored dragonbox float-formatting code narrows size_t to its own exponent/count types internally; not our code to fix. -->
+      <DisableSpecificWarnings>4267;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;YAML_CPP_STATIC_DEFINE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>..\src\yaml-cpp-0.9.0\include;..\src\yaml-cpp-0.9.0\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- Vendored dragonbox float-formatting code narrows size_t to its own exponent/count types internally; not our code to fix. -->
+      <DisableSpecificWarnings>4267;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\binary.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\convert.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\depthguard.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\directives.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\emit.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\emitfromevents.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\emitter.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\emitterstate.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\emitterutils.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\exceptions.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\exp.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\fptostring.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\memory.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\node.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\node_data.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\nodebuilder.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\nodeevents.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\null.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\ostream_wrapper.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\parse.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\parser.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\regex_yaml.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\scanner.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\scanscalar.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\scantag.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\scantoken.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\simplekey.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\singledocparser.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\stream.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\tag.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\contrib\graphbuilder.cpp" />
+    <ClCompile Include="..\src\yaml-cpp-0.9.0\src\contrib\graphbuilderadapter.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\collectionstack.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\directives.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\emitterstate.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\emitterutils.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\exp.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\indentation.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\nodebuilder.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\nodeevents.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\ptr_vector.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\regex_yaml.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\regeximpl.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\scanner.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\scanscalar.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\scantag.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\setting.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\singledocparser.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\stream.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\streamcharsource.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\stringsource.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\tag.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\src\token.h" />
+    <ClInclude Include="..\src\yaml-cpp-0.9.0\include\yaml-cpp\yaml.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
