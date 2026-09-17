@@ -7,7 +7,6 @@
 #include <string_view>
 #include <yaml-cpp/yaml.h>
 
-#pragma comment(lib, "yaml-cpp.lib")
 
 namespace YAML {
     /// <summary>Lets <c>YAML::Node</c> (de)serialize <c>std::optional&lt;T&gt;</c>: missing/null decodes to empty, empty encodes as <c>null</c>.</summary>

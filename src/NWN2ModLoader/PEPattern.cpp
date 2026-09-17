@@ -3,7 +3,7 @@
 #include <windows.h>
 #undef min
 
-#include <Psapi.h>
+#include <psapi.h>
 #include "PEPattern.h"
 #include <format>
 

@@ -72,3 +72,13 @@ Testing/
 
 bin/
 temp/
+
+# CMake
+/build/
+CMakeUserPresets.json
+
+# Symbols are never committed or shipped
+*.pdb
+
+# VS legacy CMake settings - superseded by CMakePresets.json
+CMakeSettings.json

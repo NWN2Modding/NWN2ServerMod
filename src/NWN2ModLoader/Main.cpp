@@ -9,7 +9,6 @@
 
 #include "NWN2Mod.h"
 
-#pragma comment(lib, "Detours.lib")
 
 /// <summary>
 /// Entry point run on the remote thread the launcher starts inside the target process. Loads the
