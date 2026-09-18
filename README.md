@@ -91,30 +91,35 @@ A list of full paths to plugin DLLs to load. Each is loaded once all of NWN2ModL
 
 ## Plugins
 
-A plugin is a DLL that exports two `extern "C"` functions:
+A plugin is a DLL that exports three `extern "C"` functions:
 
 ```cpp
-extern "C" __declspec(dllexport) IPlugin* CreatePlugin(IPluginHost* host);
-extern "C" __declspec(dllexport) void DestroyPlugin(IPlugin* plugin);
+extern "C" __declspec(dllexport) uint32_t GetPluginAbiVersion(void);
+extern "C" __declspec(dllexport) NWN2_Plugin* CreatePlugin(const NWN2_PluginHost* host);
+extern "C" __declspec(dllexport) void DestroyPlugin(NWN2_Plugin* plugin);
 ```
 
-`CreatePlugin` is called once at load time with an `IPluginHost*`, so the plugin can call its API (e.g. looking up other plugins) as needed. `DestroyPlugin` is called on shutdown so the plugin's own module frees the object it allocated.
+In C++ you never write those by hand — `NWN2_EXPORT_PLUGIN(MyPlugin)` at the end of the file generates all three.
 
-`IPlugin` (`src/NWN2Plugin/Plugin.h`) is the interface a plugin implements. It's the one header a plugin author needs, and every method's parameters and return values are fully documented in place there via XML doc comments — this README only covers what's needed to get oriented:
+The loader reads `GetPluginAbiVersion` first and skips any plugin built against a different ABI. `CreatePlugin` is then called once at load time with the host API, and `DestroyPlugin` on shutdown, so the plugin's own module frees what it allocated.
+
+`nwn2::PluginBase` (`src/NWN2Plugin/Plugin.hpp`) is the class a plugin derives from. It's the one header a plugin author needs, and every method is documented in place there — this README only covers what's needed to get oriented:
 
 - `GetPluginId()` — a short, stable string ID for the plugin, used to route calls to it. Must be unique among loaded plugins.
-- `OnInitialize(host)` — called once per plugin after every configured plugin has finished loading; the right place to look up other plugins via `IPluginHost::GetPlugin`.
+- `OnInitialize(host)` — called once per plugin after every configured plugin has finished loading; the right place to look up other plugins via `host.GetPlugin`.
 - `OnNWNXSetString` / `OnNWNXSetInt` / `OnNWNXSetFloat` / `OnNWNXGetString` / `OnNWNXGetInt` / `OnNWNXGetFloat` — a script's `NWNXSetString`/etc. call with this plugin's ID as the `plugin` argument.
 - `OnSetBinaryData` / `OnGetBinaryData` — a script's `StoreCampaignObject`/`RetrieveCampaignObject` call with this plugin's ID as the campaign name. NWN2ServerMod never touches the engine's own campaign DB for these calls — a plugin owns that storage entirely.
 
 All methods except `GetPluginId` have no-op default implementations, so a plugin only needs to override what it actually uses.
 
-`IPluginHost` (also `Plugin.h`) is passed in as `host`:
+`nwn2::PluginHost` (also `Plugin.hpp`) is passed to the constructor and again to `OnInitialize`. It's a small non-owning view, so keeping a copy of it by value is the intended thing to do:
 
-- `host->GetPlugin(id)` — looks up another loaded plugin by ID, or `nullptr` if none is loaded with that ID.
-- `host->RunScript(script, objectId)` — runs a compiled script (a `.ncs` resref) immediately against `objectId`, like NWScript's own `ExecuteScript`. Bare `void main()` scripts only; returns `false` if the script couldn't run or the engine's VM isn't ready yet. `NWScriptObject::OBJECT_INVALID` is available for `objectId` when no target object is needed.
+- `host.GetPlugin(id)` — another loaded plugin by ID, or `nullptr` if none is loaded with that ID. Call it through its own function pointers; its `self` belongs to another DLL and means nothing in yours.
+- `host.RunScript(script, objectId)` — runs a compiled script (a `.ncs` resref) immediately against `objectId`, like NWScript's own `ExecuteScript`. Bare `void main()` scripts only. `NWN2_OBJECT_INVALID` is available for `objectId` when no target object is needed. Returns an `NWN2_Result`, which `nwn2::Succeeded(result)` tests.
+- `host.RegisterChatHook(hook)` — intercepts every chat message before NWN2 sends it anywhere, and returns whatever hook was registered before, so hooks can chain. Returning `true` from the hook swallows the message. The hook has to be a plain function rather than a member, since the ABI carries no context pointer alongside it.
+- `host.QueryService<T>()` — a versioned loader service by name, or `nullptr` if this loader doesn't have it. Nothing offers a service yet; this is how new host APIs will arrive without changing the structs above.
 
-Build a plugin with the same toolset as `NWN2ModLoader.dll` (currently `v145`) so the `IPlugin`/`IPluginHost` vtables line up between them.
+The boundary between a plugin and the loader is plain C (`src/NWN2Plugin/PluginAbi.h`): structs of function pointers, not C++ vtables. So a plugin does **not** have to be built with the same compiler, C++ standard version, or CRT as `NWN2ModLoader.dll` — MSVC, clang, MinGW, or a plugin written in plain C all work. Exceptions never cross the boundary in either direction either: `Plugin.hpp` stops them on the plugin side and hands them to `OnUnhandledException`.
 
 ### Loading YAML from a Plugin
 
@@ -144,7 +149,7 @@ struct YAML::convert<MyPluginConfig>
 std::expected<MyPluginConfig, std::string> config = Yaml::FromFile<MyPluginConfig>(path);
 ```
 
-Any type with a `YAML::convert<T>` specialization works, including plain `std::map`/`std::vector`/etc. that yaml-cpp already knows how to convert — `src/SamplePlugin/SamplePlugin.cpp` demonstrates loading an optional `std::unordered_map<std::string, std::string>` from `SamplePlugin.yaml` next to the DLL with no custom `convert` needed. A plugin project needs yaml-cpp's headers on its include path and `YAML_CPP_STATIC_DEFINE` defined (see `SamplePlugin.vcxproj`); `Yaml.h` pulls in `yaml-cpp.lib` itself via `#pragma comment(lib, ...)`.
+Any type with a `YAML::convert<T>` specialization works, including plain `std::map`/`std::vector`/etc. that yaml-cpp already knows how to convert — `src/SamplePlugin/SamplePlugin.cpp` demonstrates loading an optional `std::unordered_map<std::string, std::string>` from `SamplePlugin.yaml` next to the DLL with no custom `convert` needed. A plugin project needs yaml-cpp's headers on its include path and `YAML_CPP_STATIC_DEFINE` defined; linking the `yaml-cpp` CMake target does both, as `src/SamplePlugin/CMakeLists.txt` shows. `Yaml.h` pulls in `yaml-cpp.lib` itself via `#pragma comment(lib, ...)`.
 
 ### Calling a Plugin from NWScript
 
@@ -162,9 +167,15 @@ string sValue = NWNXGetString("Sample", "String", "", 0);
 int iValue = NWNXGetInt("Sample", "Int", "", 0);
 ```
 
-The other arguments (`sVarName`, `sFunction`/`sParam1`/`nParam2`) are opaque, plugin-defined keys forwarded straight through unmodified — see `Plugin.h`'s doc comments on each `On...` method for exactly what they mean and what a "not found" result looks like to the calling script.
+The other arguments (`sVarName`, `sFunction`/`sParam1`/`nParam2`) are opaque, plugin-defined keys forwarded straight through unmodified — see `Plugin.hpp`'s comments on each `On...` method for exactly what they mean and what a "not found" result looks like to the calling script.
 
-`src/SamplePlugin/` is a complete, minimal `IPlugin` reference implementation (ID `"Sample"`) that backs every callback with an in-memory map and logs each call it receives to a `.log` file next to `SamplePlugin.dll`. It builds as part of the solution alongside the other projects.
+`SamplePlugin` treats one function name specially rather than just storing it, to show what the host API is for:
+
+```nwscript
+NWNXSetString("Sample", "RunScript", "", 0, "myscript");
+```
+
+`src/SamplePlugin/` is a complete, minimal reference implementation (ID `"Sample"`) that backs every callback with an in-memory map and logs each call it receives to a `.log` file next to `SamplePlugin.dll`. It builds as part of the solution alongside the other projects.
 
 # Contributing
 
