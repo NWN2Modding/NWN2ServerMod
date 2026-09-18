@@ -32,18 +32,22 @@ typedef DataBlockPtr*(__fastcall* GetBinaryDataFunc)(
     CExoString* pVarNameExoStr,
     CExoString* pPlayerExoStr);
 
-/// The real CNWSMessage::SendServerToPlayerChatMessage. Every chat message - Talk, Shout, Whisper,
-/// Tell, Party and their DM variants - goes through this one function before NWN2 sends it to any
-/// client.
+/// The real CNWSMessage::SendServerToPlayerChatMessage: the dispatcher player chat (Talk, Shout,
+/// Whisper, Tell, Party and their DM variants) and server tells go through on their way to clients.
+/// It is not the only way text reaches a player - NWScript's SendMessageToPC is delivered as a
+/// feedback message instead, and a few engine paths call the per-channel senders directly.
+///
+/// Parameter names are the engine's own, from the server PDB. extraMessage is the exception: that
+/// parameter is optimized out of the debug info, so the name is ours.
 typedef int(__fastcall* SendServerToPlayerChatMessageFunc)(
     void* pThis,
-    uint8_t mode,
-    uint32_t senderId,
-    CExoString* message,
-    uint32_t targetId,
-    void* clientList,
+    uint8_t nChatMessageType,
+    uint32_t oidSpeaker,
+    CExoString* sSpeakerMessage,
+    uint32_t nTellPlayerId,
+    void* pPlayerList,
     CExoString* extraMessage,
-    bool runScriptFlag);
+    bool bTriggerEvent);
 
 /// The real CVirtualMachine::RunScript convenience overload, which always runs against the global
 /// g_pVirtualMachine.
@@ -200,13 +204,13 @@ private:
     /// chat hook, if there is one, before deciding whether to call through.
     static int __fastcall HookSendServerToPlayerChatMessage(
         void* pThis,
-        uint8_t mode,
-        uint32_t senderId,
-        CExoString* message,
-        uint32_t targetId,
-        void* clientList,
+        uint8_t nChatMessageType,
+        uint32_t oidSpeaker,
+        CExoString* sSpeakerMessage,
+        uint32_t nTellPlayerId,
+        void* pPlayerList,
         CExoString* extraMessage,
-        bool runScriptFlag);
+        bool bTriggerEvent);
 
     /// Resolves the absolute address a RIP-relative LEA or MOV refers to. instructionOffset and
     /// displacementOffset are measured from functionAddress; instructionLength is the whole

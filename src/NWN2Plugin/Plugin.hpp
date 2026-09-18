@@ -81,8 +81,12 @@ namespace nwn2
                 : Fail(NWN2_E_UNSUPPORTED, "RunScript is not provided by this loader");
         }
 
-        /// Intercepts every chat message before NWN2 sends it. Returning true from the hook
-        /// swallows the message.
+        /// Intercepts chat on its way to players. Returning true from the hook swallows the
+        /// message, and stops the module's OnChat event firing for it.
+        ///
+        /// This covers player chat and server tells, but not NWScript's SendMessageToPC, which is
+        /// a feedback message rather than chat. See NWN2_ChatHookFunc for what the arguments mean;
+        /// the speaker ID in particular is not usable to identify who spoke.
         ///
         /// Only one hook is active at a time. Keep the hook returned here and call it when you do
         /// not swallow a message, so plugins that registered earlier still see it.

@@ -69,9 +69,18 @@ enum {
 
 /* ---- Chat hook --------------------------------------------------------- */
 
-/* Return true to swallow the message so no player sees it. */
-typedef bool (NWN2_CALL *NWN2_ChatHookFunc)(uint8_t mode, uint32_t senderId,
-                                           const char* message, uint32_t targetId);
+/* Return true to swallow the message so no player sees it, and to stop the module's OnChat event
+   firing for it.
+
+   The parameter names come from the engine's own SendServerToPlayerChatMessage. Two are easy to
+   misread:
+
+     speakerId    - the engine calls this oidSpeaker, but it is 0x7FFFFFFF for player chat, so it
+                    cannot be relied on to identify who spoke.
+     tellPlayerId - a player (client) index, NOT an object ID, and only meaningful for TELL. It is
+                    0xFFFFFFFF for talk, shout and whisper. */
+typedef bool (NWN2_CALL *NWN2_ChatHookFunc)(uint8_t mode, uint32_t speakerId,
+                                           const char* message, uint32_t tellPlayerId);
 
 /* ---- The loader, called by plugins ------------------------------------- */
 
@@ -87,8 +96,12 @@ typedef struct NWN2_PluginHost {
     NWN2_Result         (NWN2_CALL *RunScript)(void* self, const char* script,
                                                uint32_t objectId);
 
-    /* Intercepts every chat message. Returns the hook registered before it, which the new hook
-       should call when it does not swallow a message. */
+    /* Intercepts chat on its way to players. Returns the hook registered before it, which the new
+       hook should call when it does not swallow a message.
+
+       This covers player chat (talk, shout, whisper, tell, party) and server tells. It does not
+       cover NWScript's SendMessageToPC, which the engine delivers as a feedback message rather
+       than chat, and a few engine paths reach clients without passing through here. */
     NWN2_ChatHookFunc   (NWN2_CALL *RegisterChatHook)(void* self,
                                                       NWN2_ChatHookFunc hook);
 

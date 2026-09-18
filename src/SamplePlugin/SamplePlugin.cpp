@@ -195,10 +195,10 @@ namespace
 
         /// The chat hook has to be static, since the C ABI passes no context pointer with it.
         /// Returning true here would swallow the message; a sample should never do that.
-        static bool OnChat(uint8_t mode, uint32_t senderId, const char* message, uint32_t targetId)
+        static bool OnChat(uint8_t mode, uint32_t speakerId, const char* message, uint32_t tellPlayerId)
         {
-            GetLogger()("OnChat(mode={}, senderId={:#x}, targetId={:#x}): '{}'",
-                (uint32_t)mode, senderId, targetId, message ? message : "");
+            GetLogger()("OnChat(mode={}, speakerId={:#x}, tellPlayerId={:#x}): '{}'",
+                (uint32_t)mode, speakerId, tellPlayerId, message ? message : "");
             return false;
         }
     private:

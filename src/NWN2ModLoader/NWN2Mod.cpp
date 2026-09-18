@@ -773,43 +773,45 @@ void* NWN2_CALL NWN2Mod::HostQueryService(void*, const char* versionedName) noex
 
 int __fastcall NWN2Mod::HookSendServerToPlayerChatMessage(
     void* pThis,
-    uint8_t mode,
-    uint32_t senderId,
-    CExoString* message,
-    uint32_t targetId,
-    void* clientList,
+    uint8_t nChatMessageType,
+    uint32_t oidSpeaker,
+    CExoString* sSpeakerMessage,
+    uint32_t nTellPlayerId,
+    void* pPlayerList,
     CExoString* extraMessage,
-    bool runScriptFlag)
+    bool bTriggerEvent)
 {
     // A registered hook fully owns the decision to suppress; if it declines (or none is
-    // registered), fall through to the real function untouched - all six parameters, including
-    // the ones no plugin ever sees, are forwarded exactly as NWN2 passed them in.
-    if (_ChatHook && _ChatHook(mode, senderId, message->m_sString, targetId))
+    // registered), fall through to the real function untouched - every parameter, including the
+    // ones no plugin ever sees, is forwarded exactly as NWN2 passed it in. Suppressing also means
+    // bTriggerEvent never runs, so the module's OnChat event does not fire either.
+    if (_ChatHook && _ChatHook(nChatMessageType, oidSpeaker, sSpeakerMessage->m_sString, nTellPlayerId))
     {
         return 1;
     }
 
-    return _SendServerToPlayerChatMessage(pThis, mode, senderId, message, targetId, clientList, extraMessage, runScriptFlag);
+    return _SendServerToPlayerChatMessage(pThis, nChatMessageType, oidSpeaker, sSpeakerMessage,
+        nTellPlayerId, pPlayerList, extraMessage, bTriggerEvent);
 }
 
 std::expected<void*, std::string> NWN2Mod::FindSendServerToPlayerChatMessage()
 {
     // This is the byte pattern for the beginning of CNWSMessage::SendServerToPlayerChatMessage -
-    // the single function every chat message (Talk/Shout/Whisper/Tell/Party and their DM variants)
-    // funnels through before NWN2 sends it to any client, which is what makes it the right place
-    // to intercept chat for the host API's RegisterChatHook.
+    // the dispatcher player chat (Talk/Shout/Whisper/Tell/Party and their DM variants) and server
+    // tells go through on their way to clients, which is what makes it the place to intercept chat
+    // for the host API's RegisterChatHook.
     //
     // 48 8B C4                 MOV    RAX,RSP
     // 48 89 58 18              MOV    [RAX+0x18],RBX
-    // 88 50 10                 MOV    byte ptr [RAX+0x10],DL    ; mode (2nd arg)
+    // 88 50 10                 MOV    byte ptr [RAX+0x10],DL    ; nChatMessageType (2nd arg)
     // 48 89 48 08              MOV    [RAX+0x8],RCX             ; this (1st arg)
     // 55 56 57 41 54 41 55 41 56 41 57   PUSH RBP/RSI/RDI/R12/R13/R14/R15
     // 48 8D 68 ??              LEA    RBP,[RAX-0x3F]            (offset wildcarded)
     // 48 81 EC ?? ?? ?? ??     SUB    RSP,0xA0                  (immediate wildcarded)
     // 0F 29 70 ??              MOVAPS [RAX-0x48],XMM6           (offset wildcarded)
     // 0F 29 78 ??              MOVAPS [RAX-0x58],XMM7           (offset wildcarded)
-    // 4D 8B E1                 MOV    R12,R9                    ; message (4th arg)
-    // 41 8B F0                 MOV    ESI,R8D                   ; senderId (3rd arg)
+    // 4D 8B E1                 MOV    R12,R9                    ; sSpeakerMessage (4th arg)
+    // 41 8B F0                 MOV    ESI,R8D                   ; oidSpeaker (3rd arg)
     // 0F B6 DA                 MOVZX  EBX,DL
     // 4C 8B F9                 MOV    R15,RCX
     // BF 01 00 00 00           MOV    EDI,0x1
