@@ -11,12 +11,6 @@
 #include <exception>
 #include <type_traits>
 
-/// True if a struct from the other side of the boundary is new enough to contain this field.
-/// Both sides set structSize to their own sizeof, so one built against an older header is simply
-/// shorter. False for a null pointer.
-#define NWN2_HAS_FIELD(ptr, Type, field) \
-    ((ptr) != nullptr && (ptr)->structSize >= offsetof(Type, field) + sizeof((ptr)->field))
-
 namespace nwn2
 {
     /// NWScript object IDs a plugin might need.

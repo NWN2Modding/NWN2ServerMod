@@ -3,56 +3,39 @@
 #include <unordered_map>
 #include <vector>
 #include <windows.h>
-#include "Plugin.h"
+#include "PluginAbi.h"
 
-class NWN2Mod;
-
-/// <summary>
-/// Owns the set of loaded plugin DLLs: loading, initializing, looking up, and unloading them.
-/// </summary>
+/// Owns the loaded plugin DLLs: loading, initializing, looking up and unloading them.
 class PluginManager
 {
 public:
-    /// <summary>Unloads every plugin still loaded (see <see cref="UnloadAll"/>).</summary>
+    /// Unloads every plugin still loaded.
     ~PluginManager();
 
-    /// <summary>
-    /// Loads each DLL in <paramref name="pluginPaths"/>, calls its <c>CreatePlugin</c> export with
-    /// <paramref name="host"/>, and indexes the result by <see cref="IPlugin::GetPluginId"/>.
-    /// </summary>
-    /// <param name="host">The host API passed to each plugin's <c>CreatePlugin</c>.</param>
-    /// <param name="pluginPaths">The full paths of the plugin DLLs to load, in order.</param>
-    /// <remarks>Failures for an individual plugin are logged and skipped rather than aborting the whole batch.</remarks>
-    void LoadPlugins(NWN2Mod* host, const std::vector<std::string>& pluginPaths);
+    /// Loads each DLL in pluginPaths, checks it was built against this plugin ABI, calls its
+    /// CreatePlugin export with host, and indexes the result by its GetPluginId. A plugin that
+    /// fails any of that is logged and skipped; the rest still load.
+    void LoadPlugins(const NWN2_PluginHost* host, const std::vector<std::string>& pluginPaths);
 
-    /// <summary>Calls <see cref="IPlugin::OnInitialize"/> on every loaded plugin.</summary>
-    /// <param name="host">The host API passed to each plugin's <c>OnInitialize</c>.</param>
-    /// <remarks>
-    /// Called once, after <see cref="LoadPlugins"/> has finished loading all of them, so every
-    /// plugin can already see every other plugin via <see cref="FindById"/>/<c>GetPlugin</c>
-    /// regardless of load order.
-    /// </remarks>
-    void InitializeAll(NWN2Mod* host);
+    /// Calls OnInitialize on every loaded plugin that provides it. Runs after LoadPlugins has
+    /// finished, so a plugin can look up any other plugin here regardless of load order.
+    void InitializeAll(const NWN2_PluginHost* host);
 
-    /// <summary>Calls <c>DestroyPlugin</c> on and frees every loaded plugin module.</summary>
+    /// Calls DestroyPlugin on and frees every loaded plugin module.
     void UnloadAll();
 
-    /// <summary>
-    /// Looks up a plugin by its <see cref="IPlugin::GetPluginId"/>.
-    /// </summary>
-    /// <param name="id">The plugin ID to look up.</param>
-    /// <returns>The matching plugin instance, or <see langword="nullptr"/> if none is loaded with that ID.</returns>
-    /// <remarks>Used to route <c>SetBinaryData</c>/<c>GetBinaryData</c> calls by campaign name, and <c>NWNX*</c> calls by their explicit plugin argument.</remarks>
-    IPlugin* FindById(const std::string& id) const;
+    /// A loaded plugin by its ID, or null. Routes SetBinaryData/GetBinaryData by campaign name, and
+    /// the NWNX* calls by their plugin argument.
+    NWN2_Plugin* FindById(const std::string& id) const;
 
 private:
     struct LoadedPlugin
     {
         HMODULE module;
-        IPlugin* instance;
-        DestroyPluginFunc destroy;
+        NWN2_Plugin* instance;
+        NWN2_DestroyPluginFunc destroy;
     };
 
     std::vector<LoadedPlugin> _loaded;
-    std::unordered_map<std::string, IPlugin*> _byId;
+    std::unordered_map<std::string, NWN2_Plugin*> _byId;
 };

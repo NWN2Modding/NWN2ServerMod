@@ -27,6 +27,12 @@ extern "C" {
 /* x64 Windows only has one calling convention, but naming it documents the intent. */
 #define NWN2_CALL __cdecl
 
+/* True if a struct from the other side of the boundary is new enough to contain this field. Both
+   sides set structSize to their own sizeof, so one built against an older header is simply
+   shorter. False for a null pointer. */
+#define NWN2_HAS_FIELD(ptr, Type, field) \
+    ((ptr) != NULL && (ptr)->structSize >= offsetof(Type, field) + sizeof((ptr)->field))
+
 struct NWN2_Plugin;
 
 /* ---- Constants --------------------------------------------------------- */
