@@ -6,5 +6,3 @@
 #include "Logger.h"
 #include "MemoryMap.h"
 #include "Yaml.h"
-
-#pragma comment(lib, "NWN2Shared.lib")
