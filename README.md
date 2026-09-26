@@ -116,6 +116,7 @@ All methods except `GetPluginId` have no-op default implementations, so a plugin
 
 - `host.GetPlugin(id)` — another loaded plugin by ID, or `nullptr` if none is loaded with that ID. Call it through its own function pointers; its `self` belongs to another DLL and means nothing in yours.
 - `host.RunScript(script, objectId)` — runs a compiled script (a `.ncs` resref) immediately against `objectId`, like NWScript's own `ExecuteScript`. Bare `void main()` scripts only. `NWN2_OBJECT_INVALID` is available for `objectId` when no target object is needed. Returns an `NWN2Result`, which `nwn2::Succeeded(result)` tests.
+- `host.GetCallingObject()` — the object the running script was called on, like NWScript's `OBJECT_SELF`. Only meaningful inside a callback from the loader; `NWN2_OBJECT_INVALID` otherwise.
 - `host.RegisterChatHook(hook)` — intercepts chat on its way to players and returns whatever hook was registered before, so hooks can chain. Returning `true` swallows the message and stops the module's `OnChat` event firing for it. The hook has to be a plain function rather than a member, since the ABI carries no context pointer alongside it.
 
   It covers player chat (talk, shout, whisper, tell, party) and server tells. It does **not** cover NWScript's `SendMessageToPC`, which the engine delivers as a feedback message rather than chat. Note also that the speaker ID is `0x7FFFFFFF` for player chat and so cannot identify who spoke, and that the fourth argument is a player index that only means anything for a tell — see `NWN2ChatHookFunc` in `PluginAbi.h`.

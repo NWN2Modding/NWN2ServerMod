@@ -83,6 +83,7 @@ public:
         _HostAbi.RunScript = &HostRunScript;
         _HostAbi.RegisterChatHook = &HostRegisterChatHook;
         _HostAbi.QueryService = &HostQueryService;
+        _HostAbi.GetCallingObject = &HostGetCallingObject;
     }
 
     // _HostAbi.self points at this object, so a copy would hand plugins a pointer to the original.
@@ -130,6 +131,9 @@ public:
     /// NWN2PluginHost::RegisterChatHook.
     NWN2ChatHookFunc RegisterChatHook(NWN2ChatHookFunc hook);
 
+    /// The object that the running script was called on. Backs NWN2PluginHost::GetCallingObject.
+    uint32_t GetCallingObject() const;
+
 private:
     static InitializeNetLayerFunc _InitializeNetLayer;
     static InitializeCommandsFunc _InitializeCommands;
@@ -141,13 +145,14 @@ private:
     /// The registered chat hook, or null if no plugin has registered one.
     static NWN2ChatHookFunc _ChatHook;
 
-    /// The four NWN2PluginHost entry points. Each one recovers the loader from self and forwards to
+    /// The five NWN2PluginHost entry points. Each one recovers the loader from self and forwards to
     /// the matching member above. All of them are noexcept: an exception must never unwind out of
     /// this DLL into plugin code, which may have been built by an entirely different compiler.
     static NWN2Plugin* NWN2_CALL HostGetPlugin(void* self, const char* id) noexcept;
     static NWN2Result NWN2_CALL HostRunScript(void* self, const char* script, uint32_t objectId) noexcept;
     static NWN2ChatHookFunc NWN2_CALL HostRegisterChatHook(void* self, NWN2ChatHookFunc hook) noexcept;
     static void* NWN2_CALL HostQueryService(void* self, const char* versionedName) noexcept;
+    static uint32_t NWN2_CALL HostGetCallingObject(void* self) noexcept;
 
     /// Writes the NWNX* handlers straight into the game's command table. NWN2Server calls them
     /// through the table by pointer, so they need no detour.

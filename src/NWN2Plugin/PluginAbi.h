@@ -113,6 +113,11 @@ typedef struct NWN2PluginHost {
        loader does not have it. New services go here rather than growing this struct. */
     void*              (NWN2_CALL *QueryService)(void* self,
                                                  const char* versionedName);
+
+    /* The object the running script was called on, like NWScript's OBJECT_SELF. Only meaningful
+       inside a call from the loader - OnNWNX*, OnSetBinaryData, OnGetBinaryData - since that is
+       when the engine is running a script. NWN2_OBJECT_INVALID at any other time. */
+    uint32_t           (NWN2_CALL *GetCallingObject)(void* self);
 } NWN2PluginHost;
 
 /* ---- Where a plugin writes its results ---------------------------------- */

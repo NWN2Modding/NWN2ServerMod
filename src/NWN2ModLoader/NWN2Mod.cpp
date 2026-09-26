@@ -736,6 +736,18 @@ NWN2ChatHookFunc NWN2Mod::RegisterChatHook(NWN2ChatHookFunc hook)
     return previous;
 }
 
+uint32_t NWN2Mod::GetCallingObject() const
+{
+    // Null until HookInitializeCommands has run. m_bValidObjectRunScript is the engine's own
+    // flag for whether m_oidObjectRunScript currently means anything.
+    if (!_NWVirtualMachineCommands || !_NWVirtualMachineCommands->m_bValidObjectRunScript)
+    {
+        return NWN2_OBJECT_INVALID;
+    }
+
+    return _NWVirtualMachineCommands->m_oidObjectRunScript;
+}
+
 NWN2Plugin* NWN2_CALL NWN2Mod::HostGetPlugin(void* self, const char* id) noexcept
 {
     return static_cast<NWN2Mod*>(self)->GetPlugin(id);
@@ -769,6 +781,11 @@ void* NWN2_CALL NWN2Mod::HostQueryService(void*, const char* versionedName) noex
     NWN2Mod::Log("QueryService: this loader has no service named '{}'.", versionedName ? versionedName : "");
 
     return nullptr;
+}
+
+uint32_t NWN2_CALL NWN2Mod::HostGetCallingObject(void* self) noexcept
+{
+    return static_cast<NWN2Mod*>(self)->GetCallingObject();
 }
 
 int __fastcall NWN2Mod::HookSendServerToPlayerChatMessage(

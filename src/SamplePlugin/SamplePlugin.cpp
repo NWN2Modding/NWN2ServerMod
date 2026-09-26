@@ -166,8 +166,8 @@ namespace
 
         bool OnNWNXGetInt(const char* function, const char* param1, int param2, int& outValue) override
         {
-            GetLogger()("OnNWNXGetInt(function='{}', param1='{}', param2={})",
-                function ? function : "", param1 ? param1 : "", param2);
+            GetLogger()("OnNWNXGetInt(function='{}', param1='{}', param2={}) caller=0x{:08X}",
+                function ? function : "", param1 ? param1 : "", param2, _host.GetCallingObject());
 
             auto it = _ints.find(MakeKey(function, param1, param2));
             if (it == _ints.end())
