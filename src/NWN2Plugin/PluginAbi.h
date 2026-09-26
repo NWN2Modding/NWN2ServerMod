@@ -37,7 +37,7 @@ extern "C" {
         (size_t)((const char*)&(ptr)->field - (const char*)(ptr))   \
         + sizeof((ptr)->field))
 
-struct NWN2_Plugin;
+struct NWN2Plugin;
 
 /* ---- Constants --------------------------------------------------------- */
 
@@ -59,10 +59,10 @@ struct NWN2_Plugin;
 /* ---- Errors ------------------------------------------------------------ */
 
 /* Exceptions cannot cross this boundary, so failures come back as a value. */
-typedef struct NWN2_Result {
+typedef struct NWN2Result {
     int32_t     code;      /* 0 on success */
     const char* message;   /* owned by the callee, valid until its next call */
-} NWN2_Result;
+} NWN2Result;
 
 enum {
     NWN2_E_UNSUPPORTED   = 1,  /* the other side does not provide this call */
@@ -83,22 +83,22 @@ enum {
                     cannot be relied on to identify who spoke.
      tellPlayerId - a player (client) index, NOT an object ID, and only meaningful for TELL. It is
                     0xFFFFFFFF for talk, shout and whisper. */
-typedef bool (NWN2_CALL *NWN2_ChatHookFunc)(uint8_t mode, uint32_t speakerId,
+typedef bool (NWN2_CALL *NWN2ChatHookFunc)(uint8_t mode, uint32_t speakerId,
                                            const char* message, uint32_t tellPlayerId);
 
 /* ---- The loader, called by plugins ------------------------------------- */
 
-typedef struct NWN2_PluginHost {
+typedef struct NWN2PluginHost {
     uint32_t structSize;   /* sizeof this struct, as the loader built it */
     void*    self;         /* the loader; pass it back as the first argument */
 
     /* Another loaded plugin by its ID, or NULL. Call it through its own function pointers - its
        self belongs to another DLL and means nothing here. */
-    struct NWN2_Plugin* (NWN2_CALL *GetPlugin)(void* self, const char* id);
+    struct NWN2Plugin* (NWN2_CALL *GetPlugin)(void* self, const char* id);
 
     /* Runs a compiled script, like NWScript's ExecuteScript(script, objectId). */
-    NWN2_Result         (NWN2_CALL *RunScript)(void* self, const char* script,
-                                               uint32_t objectId);
+    NWN2Result         (NWN2_CALL *RunScript)(void* self, const char* script,
+                                              uint32_t objectId);
 
     /* Intercepts chat on its way to players. Returns the hook registered before it, which the new
        hook should call when it does not swallow a message.
@@ -106,39 +106,39 @@ typedef struct NWN2_PluginHost {
        This covers player chat (talk, shout, whisper, tell, party) and server tells. It does not
        cover NWScript's SendMessageToPC, which the engine delivers as a feedback message rather
        than chat, and a few engine paths reach clients without passing through here. */
-    NWN2_ChatHookFunc   (NWN2_CALL *RegisterChatHook)(void* self,
-                                                      NWN2_ChatHookFunc hook);
+    NWN2ChatHookFunc   (NWN2_CALL *RegisterChatHook)(void* self,
+                                                     NWN2ChatHookFunc hook);
 
     /* Looks up a loader service by a versioned name such as "IHookService/1", or NULL if this
        loader does not have it. New services go here rather than growing this struct. */
-    void*               (NWN2_CALL *QueryService)(void* self,
-                                                  const char* versionedName);
-} NWN2_PluginHost;
+    void*              (NWN2_CALL *QueryService)(void* self,
+                                                 const char* versionedName);
+} NWN2PluginHost;
 
 /* ---- Where a plugin writes its results ---------------------------------- */
 
 /* The loader owns the buffer. Not calling Allocate means "no data". */
-typedef struct NWN2_BinarySink {
+typedef struct NWN2BinarySink {
     uint32_t structSize;
     void*    self;
     uint8_t* (NWN2_CALL *Allocate)(void* self, size_t size);
     void     (NWN2_CALL *Clear)(void* self);
-} NWN2_BinarySink;
+} NWN2BinarySink;
 
 /* The loader owns the storage and adds the terminator, so Allocate's length excludes it.
    Touching neither Allocate nor Set means "no value". */
-typedef struct NWN2_StringSink {
+typedef struct NWN2StringSink {
     uint32_t structSize;
     void*    self;
     char* (NWN2_CALL *Allocate)(void* self, size_t length);
     void  (NWN2_CALL *Set)(void* self, const char* value);
     void  (NWN2_CALL *Clear)(void* self);
-} NWN2_StringSink;
+} NWN2StringSink;
 
 /* ---- The plugin, called by the loader ----------------------------------- */
 
 /* Any entry may be NULL, which means the plugin does not handle that call. */
-typedef struct NWN2_Plugin {
+typedef struct NWN2Plugin {
     uint32_t structSize;   /* sizeof this struct, as the plugin built it */
     void*    self;         /* the plugin; pass it back as the first argument */
 
@@ -152,7 +152,7 @@ typedef struct NWN2_Plugin {
                                       const uint8_t* data, size_t size);
     void (NWN2_CALL *OnGetBinaryData)(void* self, const char* varName,
                                       const char* player,
-                                      NWN2_BinarySink* result);
+                                      NWN2BinarySink* result);
 
     /* NWNXSetString / NWNXSetInt / NWNXSetFloat with this plugin's ID. */
     void (NWN2_CALL *OnNWNXSetString)(void* self, const char* function,
@@ -169,7 +169,7 @@ typedef struct NWN2_Plugin {
        value, and the script then sees 0 or an empty string. */
     void (NWN2_CALL *OnNWNXGetString)(void* self, const char* function,
                                       const char* param1, int32_t param2,
-                                      NWN2_StringSink* result);
+                                      NWN2StringSink* result);
     bool (NWN2_CALL *OnNWNXGetInt)   (void* self, const char* function,
                                       const char* param1, int32_t param2,
                                       int32_t* outValue);
@@ -178,14 +178,14 @@ typedef struct NWN2_Plugin {
                                       float* outValue);
 
     /* Called once, after every plugin has loaded, so looking up other plugins here is safe. */
-    void (NWN2_CALL *OnInitialize)(void* self, const NWN2_PluginHost* host);
-} NWN2_Plugin;
+    void (NWN2_CALL *OnInitialize)(void* self, const NWN2PluginHost* host);
+} NWN2Plugin;
 
 /* ---- What a plugin DLL exports ------------------------------------------ */
 
-typedef uint32_t     (NWN2_CALL *NWN2_GetPluginAbiVersionFunc)(void);
-typedef NWN2_Plugin* (NWN2_CALL *NWN2_CreatePluginFunc)(const NWN2_PluginHost* host);
-typedef void         (NWN2_CALL *NWN2_DestroyPluginFunc)(NWN2_Plugin* plugin);
+typedef uint32_t     (NWN2_CALL *NWN2GetPluginAbiVersionFunc)(void);
+typedef NWN2Plugin*  (NWN2_CALL *NWN2CreatePluginFunc)(const NWN2PluginHost* host);
+typedef void         (NWN2_CALL *NWN2DestroyPluginFunc)(NWN2Plugin* plugin);
 
 /* Exports the version, so the loader can reject a plugin built against a different ABI. */
 #define NWN2_DECLARE_PLUGIN_ABI()                                        \

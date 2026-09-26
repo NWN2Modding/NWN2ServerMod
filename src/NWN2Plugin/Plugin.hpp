@@ -37,13 +37,13 @@ namespace nwn2
     };
 
     /// Success.
-    constexpr NWN2_Result Ok() noexcept { return { 0, nullptr }; }
+    constexpr NWN2Result Ok() noexcept { return { 0, nullptr }; }
 
     /// Failure. The message must outlive the call - a literal, or storage the callee owns.
-    constexpr NWN2_Result Fail(int32_t code, const char* message = nullptr) noexcept { return { code, message }; }
+    constexpr NWN2Result Fail(int32_t code, const char* message = nullptr) noexcept { return { code, message }; }
 
     /// True if the result reports success.
-    constexpr bool Succeeded(const NWN2_Result& result) noexcept { return result.code == 0; }
+    constexpr bool Succeeded(const NWN2Result& result) noexcept { return result.code == 0; }
 
     /// The loader, as seen by a plugin. Copyable, and owns nothing.
     ///
@@ -53,19 +53,19 @@ namespace nwn2
     {
     public:
         PluginHost() noexcept = default;
-        explicit PluginHost(const NWN2_PluginHost* host) noexcept : _host(host) {}
+        explicit PluginHost(const NWN2PluginHost* host) noexcept : _host(host) {}
 
         /// True if this wraps a loader at all.
         explicit operator bool() const noexcept { return _host != nullptr; }
 
         /// The underlying struct, for anything this wrapper does not cover.
-        const NWN2_PluginHost* Raw() const noexcept { return _host; }
+        const NWN2PluginHost* Raw() const noexcept { return _host; }
 
         /// Another loaded plugin by its ID, or null. For this plugin it returns &Abi().
         ///
         /// Call the result through its own function pointers. Never cast its self to PluginBase:
         /// it belongs to another DLL, possibly built by another compiler, with its own heap.
-        NWN2_Plugin* GetPlugin(const char* id) const noexcept
+        NWN2Plugin* GetPlugin(const char* id) const noexcept
         {
             return NWN2_HAS_FIELD(_host, GetPlugin) && _host->GetPlugin
                 ? _host->GetPlugin(_host->self, id)
@@ -74,7 +74,7 @@ namespace nwn2
 
         /// Runs a compiled script, like NWScript's ExecuteScript(script, objectId). objectId is
         /// what OBJECT_SELF resolves to inside it.
-        NWN2_Result RunScript(const char* script, uint32_t objectId) const noexcept
+        NWN2Result RunScript(const char* script, uint32_t objectId) const noexcept
         {
             return NWN2_HAS_FIELD(_host, RunScript) && _host->RunScript
                 ? _host->RunScript(_host->self, script, objectId)
@@ -85,12 +85,12 @@ namespace nwn2
         /// message, and stops the module's OnChat event firing for it.
         ///
         /// This covers player chat and server tells, but not NWScript's SendMessageToPC, which is
-        /// a feedback message rather than chat. See NWN2_ChatHookFunc for what the arguments mean;
+        /// a feedback message rather than chat. See NWN2ChatHookFunc for what the arguments mean;
         /// the speaker ID in particular is not usable to identify who spoke.
         ///
         /// Only one hook is active at a time. Keep the hook returned here and call it when you do
         /// not swallow a message, so plugins that registered earlier still see it.
-        NWN2_ChatHookFunc RegisterChatHook(NWN2_ChatHookFunc hook) const noexcept
+        NWN2ChatHookFunc RegisterChatHook(NWN2ChatHookFunc hook) const noexcept
         {
             return NWN2_HAS_FIELD(_host, RegisterChatHook) && _host->RegisterChatHook
                 ? _host->RegisterChatHook(_host->self, hook)
@@ -108,7 +108,7 @@ namespace nwn2
         }
 
     private:
-        const NWN2_PluginHost* _host = nullptr;
+        const NWN2PluginHost* _host = nullptr;
     };
 
     /// Where OnGetBinaryData writes its data. The loader owns the buffer, and leaving this
@@ -116,7 +116,7 @@ namespace nwn2
     class BinaryDataResult
     {
     public:
-        explicit BinaryDataResult(NWN2_BinarySink* sink) noexcept : _sink(sink) {}
+        explicit BinaryDataResult(NWN2BinarySink* sink) noexcept : _sink(sink) {}
 
         /// A writable buffer of exactly size bytes, or null if it could not be allocated.
         /// Calling this again replaces the previous buffer.
@@ -137,7 +137,7 @@ namespace nwn2
         }
 
     private:
-        NWN2_BinarySink* _sink;
+        NWN2BinarySink* _sink;
     };
 
     /// Where OnNWNXGetString writes its value. The loader owns the storage, and leaving this
@@ -145,7 +145,7 @@ namespace nwn2
     class StringResult
     {
     public:
-        explicit StringResult(NWN2_StringSink* sink) noexcept : _sink(sink) {}
+        explicit StringResult(NWN2StringSink* sink) noexcept : _sink(sink) {}
 
         /// A writable buffer of exactly length characters, or null if it could not be allocated.
         /// The loader adds the terminator, so length excludes it.
@@ -175,7 +175,7 @@ namespace nwn2
         }
 
     private:
-        NWN2_StringSink* _sink;
+        NWN2StringSink* _sink;
     };
 
     /// Base class for a C++ plugin. Override GetPluginId and whatever else you use; the rest have
@@ -241,13 +241,13 @@ namespace nwn2
         virtual void OnUnhandledException(const char* /*callback*/, const char* /*what*/) noexcept {}
 
         /// This plugin's C struct: what the loader holds, and what GetPlugin returns for it.
-        NWN2_Plugin& Abi() noexcept { return _abi; }
+        NWN2Plugin& Abi() noexcept { return _abi; }
 
         /// This plugin's C struct: what the loader holds, and what GetPlugin returns for it.
-        const NWN2_Plugin& Abi() const noexcept { return _abi; }
+        const NWN2Plugin& Abi() const noexcept { return _abi; }
 
     private:
-        NWN2_Plugin _abi;
+        NWN2Plugin _abi;
     };
 
     // The C entry points behind PluginBase::Abi(). Each recovers the plugin from self, forwards to
@@ -292,7 +292,7 @@ namespace nwn2
             }
         }
 
-        inline void NWN2_CALL OnInitialize(void* self, const NWN2_PluginHost* host) noexcept
+        inline void NWN2_CALL OnInitialize(void* self, const NWN2PluginHost* host) noexcept
         {
             try
             {
@@ -319,7 +319,7 @@ namespace nwn2
         }
 
         inline void NWN2_CALL OnGetBinaryData(void* self, const char* varName, const char* player,
-                                              NWN2_BinarySink* result) noexcept
+                                              NWN2BinarySink* result) noexcept
         {
             // Without a sink there is nowhere to put data, so there is nothing to do.
             if (result == nullptr)
@@ -377,7 +377,7 @@ namespace nwn2
         }
 
         inline void NWN2_CALL OnNWNXGetString(void* self, const char* function, const char* param1,
-                                              int32_t param2, NWN2_StringSink* result) noexcept
+                                              int32_t param2, NWN2StringSink* result) noexcept
         {
             if (result == nullptr)
             {
@@ -432,7 +432,7 @@ namespace nwn2
 
         // Passes the host to the plugin's constructor if it takes one.
         template <typename T>
-        PluginBase* Construct([[maybe_unused]] const NWN2_PluginHost* host)
+        PluginBase* Construct([[maybe_unused]] const NWN2PluginHost* host)
         {
             static_assert(std::is_base_of_v<PluginBase, T>,
                           "NWN2_EXPORT_PLUGIN: the plugin type must derive from nwn2::PluginBase");
@@ -451,7 +451,7 @@ namespace nwn2
     inline PluginBase::PluginBase() noexcept
         : _abi{}
     {
-        _abi.structSize      = sizeof(NWN2_Plugin);
+        _abi.structSize      = sizeof(NWN2Plugin);
         _abi.self            = this;
         _abi.GetPluginId     = &detail::GetPluginId;
         _abi.OnSetBinaryData = &detail::OnSetBinaryData;
@@ -476,7 +476,7 @@ namespace nwn2
     NWN2_DECLARE_PLUGIN_ABI()                                                           \
                                                                                         \
     NWN2_EXTERN_C __declspec(dllexport)                                                 \
-    NWN2_Plugin* NWN2_CALL CreatePlugin(const NWN2_PluginHost* host) noexcept           \
+    NWN2Plugin* NWN2_CALL CreatePlugin(const NWN2PluginHost* host) noexcept           \
     {                                                                                   \
         try                                                                             \
         {                                                                               \
@@ -489,7 +489,7 @@ namespace nwn2
     }                                                                                   \
                                                                                         \
     NWN2_EXTERN_C __declspec(dllexport)                                                 \
-    void NWN2_CALL DestroyPlugin(NWN2_Plugin* plugin) noexcept                          \
+    void NWN2_CALL DestroyPlugin(NWN2Plugin* plugin) noexcept                          \
     {                                                                                   \
         if (plugin != nullptr && plugin->self != nullptr)                               \
         {                                                                               \

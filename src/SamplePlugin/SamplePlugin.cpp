@@ -81,7 +81,7 @@ namespace
         {
             // Every plugin has finished loading by now, so looking a plugin up here (even this
             // one, just to prove the round trip works) is safe regardless of load order.
-            NWN2_Plugin* self = host.GetPlugin(GetPluginId());
+            NWN2Plugin* self = host.GetPlugin(GetPluginId());
             GetLogger()("OnInitialize() - host.GetPlugin(\"{}\") returned {}.",
                 GetPluginId(), self == &Abi() ? "this plugin itself, as expected" : "something unexpected");
 
@@ -127,7 +127,7 @@ namespace
             // API is for: NWNXSetString("Sample", "RunScript", "", 0, "myscript") runs myscript.
             if (function && std::strcmp(function, "RunScript") == 0)
             {
-                NWN2_Result ran = _host.RunScript(value, NWN2_OBJECT_INVALID);
+                NWN2Result ran = _host.RunScript(value, NWN2_OBJECT_INVALID);
                 GetLogger()("RunScript('{}') -> {}", value ? value : "",
                     nwn2::Succeeded(ran) ? "ok" : (ran.message ? ran.message : "failed"));
                 return;

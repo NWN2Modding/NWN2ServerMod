@@ -95,8 +95,8 @@ A plugin is a DLL that exports three `extern "C"` functions:
 
 ```cpp
 extern "C" __declspec(dllexport) uint32_t GetPluginAbiVersion(void);
-extern "C" __declspec(dllexport) NWN2_Plugin* CreatePlugin(const NWN2_PluginHost* host);
-extern "C" __declspec(dllexport) void DestroyPlugin(NWN2_Plugin* plugin);
+extern "C" __declspec(dllexport) NWN2Plugin* CreatePlugin(const NWN2PluginHost* host);
+extern "C" __declspec(dllexport) void DestroyPlugin(NWN2Plugin* plugin);
 ```
 
 In C++ you never write those by hand — `NWN2_EXPORT_PLUGIN(MyPlugin)` at the end of the file generates all three.
@@ -115,10 +115,10 @@ All methods except `GetPluginId` have no-op default implementations, so a plugin
 `nwn2::PluginHost` (also `Plugin.hpp`) is passed to the constructor and again to `OnInitialize`. It's a small non-owning view, so keeping a copy of it by value is the intended thing to do:
 
 - `host.GetPlugin(id)` — another loaded plugin by ID, or `nullptr` if none is loaded with that ID. Call it through its own function pointers; its `self` belongs to another DLL and means nothing in yours.
-- `host.RunScript(script, objectId)` — runs a compiled script (a `.ncs` resref) immediately against `objectId`, like NWScript's own `ExecuteScript`. Bare `void main()` scripts only. `NWN2_OBJECT_INVALID` is available for `objectId` when no target object is needed. Returns an `NWN2_Result`, which `nwn2::Succeeded(result)` tests.
+- `host.RunScript(script, objectId)` — runs a compiled script (a `.ncs` resref) immediately against `objectId`, like NWScript's own `ExecuteScript`. Bare `void main()` scripts only. `NWN2_OBJECT_INVALID` is available for `objectId` when no target object is needed. Returns an `NWN2Result`, which `nwn2::Succeeded(result)` tests.
 - `host.RegisterChatHook(hook)` — intercepts chat on its way to players and returns whatever hook was registered before, so hooks can chain. Returning `true` swallows the message and stops the module's `OnChat` event firing for it. The hook has to be a plain function rather than a member, since the ABI carries no context pointer alongside it.
 
-  It covers player chat (talk, shout, whisper, tell, party) and server tells. It does **not** cover NWScript's `SendMessageToPC`, which the engine delivers as a feedback message rather than chat. Note also that the speaker ID is `0x7FFFFFFF` for player chat and so cannot identify who spoke, and that the fourth argument is a player index that only means anything for a tell — see `NWN2_ChatHookFunc` in `PluginAbi.h`.
+  It covers player chat (talk, shout, whisper, tell, party) and server tells. It does **not** cover NWScript's `SendMessageToPC`, which the engine delivers as a feedback message rather than chat. Note also that the speaker ID is `0x7FFFFFFF` for player chat and so cannot identify who spoke, and that the fourth argument is a player index that only means anything for a tell — see `NWN2ChatHookFunc` in `PluginAbi.h`.
 - `host.QueryService<T>()` — a versioned loader service by name, or `nullptr` if this loader doesn't have it. Nothing offers a service yet; this is how new host APIs will arrive without changing the structs above.
 
 The boundary between a plugin and the loader is plain C (`src/NWN2Plugin/PluginAbi.h`): structs of function pointers, not C++ vtables. So a plugin does **not** have to be built with the same compiler, C++ standard version, or CRT as `NWN2ModLoader.dll` — MSVC, clang, MinGW, or a plugin written in plain C all work. Exceptions never cross the boundary in either direction either: `Plugin.hpp` stops them on the plugin side and hands them to `OnUnhandledException`.

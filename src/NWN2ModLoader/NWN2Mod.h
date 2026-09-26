@@ -115,20 +115,20 @@ public:
     }
 
     /// The host API handed to every plugin, at load time and again at initialization.
-    const NWN2_PluginHost* HostAbi() const { return &_HostAbi; }
+    const NWN2PluginHost* HostAbi() const { return &_HostAbi; }
 
-    /// A loaded plugin by ID, or null. Backs NWN2_PluginHost::GetPlugin.
-    NWN2_Plugin* GetPlugin(const char* id) const
+    /// A loaded plugin by ID, or null. Backs NWN2PluginHost::GetPlugin.
+    NWN2Plugin* GetPlugin(const char* id) const
     {
         return _PluginManager.FindById(id ? id : "");
     }
 
-    /// Runs a compiled script. Backs NWN2_PluginHost::RunScript.
+    /// Runs a compiled script. Backs NWN2PluginHost::RunScript.
     bool RunScript(const char* script, uint32_t objectId) const;
 
     /// Registers the chat interceptor and returns the one registered before it. Backs
-    /// NWN2_PluginHost::RegisterChatHook.
-    NWN2_ChatHookFunc RegisterChatHook(NWN2_ChatHookFunc hook);
+    /// NWN2PluginHost::RegisterChatHook.
+    NWN2ChatHookFunc RegisterChatHook(NWN2ChatHookFunc hook);
 
 private:
     static InitializeNetLayerFunc _InitializeNetLayer;
@@ -139,14 +139,14 @@ private:
     static SendServerToPlayerChatMessageFunc _SendServerToPlayerChatMessage;
 
     /// The registered chat hook, or null if no plugin has registered one.
-    static NWN2_ChatHookFunc _ChatHook;
+    static NWN2ChatHookFunc _ChatHook;
 
-    /// The four NWN2_PluginHost entry points. Each one recovers the loader from self and forwards to
+    /// The four NWN2PluginHost entry points. Each one recovers the loader from self and forwards to
     /// the matching member above. All of them are noexcept: an exception must never unwind out of
     /// this DLL into plugin code, which may have been built by an entirely different compiler.
-    static NWN2_Plugin* NWN2_CALL HostGetPlugin(void* self, const char* id) noexcept;
-    static NWN2_Result NWN2_CALL HostRunScript(void* self, const char* script, uint32_t objectId) noexcept;
-    static NWN2_ChatHookFunc NWN2_CALL HostRegisterChatHook(void* self, NWN2_ChatHookFunc hook) noexcept;
+    static NWN2Plugin* NWN2_CALL HostGetPlugin(void* self, const char* id) noexcept;
+    static NWN2Result NWN2_CALL HostRunScript(void* self, const char* script, uint32_t objectId) noexcept;
+    static NWN2ChatHookFunc NWN2_CALL HostRegisterChatHook(void* self, NWN2ChatHookFunc hook) noexcept;
     static void* NWN2_CALL HostQueryService(void* self, const char* versionedName) noexcept;
 
     /// Writes the NWNX* handlers straight into the game's command table. NWN2Server calls them
@@ -259,5 +259,5 @@ private:
     PluginManager _PluginManager;
 
     /// The host API struct, filled in once by the constructor.
-    NWN2_PluginHost _HostAbi{};
+    NWN2PluginHost _HostAbi{};
 };

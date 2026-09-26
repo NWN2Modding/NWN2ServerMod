@@ -6,7 +6,7 @@ PluginManager::~PluginManager()
     UnloadAll();
 }
 
-void PluginManager::LoadPlugins(const NWN2_PluginHost* host, const std::vector<std::string>& pluginPaths)
+void PluginManager::LoadPlugins(const NWN2PluginHost* host, const std::vector<std::string>& pluginPaths)
 {
     for (const auto& path : pluginPaths)
     {
@@ -17,9 +17,9 @@ void PluginManager::LoadPlugins(const NWN2_PluginHost* host, const std::vector<s
             continue;
         }
 
-        auto versionFunc = (NWN2_GetPluginAbiVersionFunc)::GetProcAddress(module, "GetPluginAbiVersion");
-        auto createFunc = (NWN2_CreatePluginFunc)::GetProcAddress(module, "CreatePlugin");
-        auto destroyFunc = (NWN2_DestroyPluginFunc)::GetProcAddress(module, "DestroyPlugin");
+        auto versionFunc = (NWN2GetPluginAbiVersionFunc)::GetProcAddress(module, "GetPluginAbiVersion");
+        auto createFunc = (NWN2CreatePluginFunc)::GetProcAddress(module, "CreatePlugin");
+        auto destroyFunc = (NWN2DestroyPluginFunc)::GetProcAddress(module, "DestroyPlugin");
         if (!versionFunc || !createFunc || !destroyFunc)
         {
             NWN2Mod::Log("Plugin '{}' is missing the GetPluginAbiVersion/CreatePlugin/DestroyPlugin exports.", path);
@@ -39,7 +39,7 @@ void PluginManager::LoadPlugins(const NWN2_PluginHost* host, const std::vector<s
             continue;
         }
 
-        NWN2_Plugin* instance = createFunc(host);
+        NWN2Plugin* instance = createFunc(host);
         if (!instance)
         {
             NWN2Mod::Log("Plugin '{}' CreatePlugin returned null.", path);
@@ -73,7 +73,7 @@ void PluginManager::LoadPlugins(const NWN2_PluginHost* host, const std::vector<s
     }
 }
 
-void PluginManager::InitializeAll(const NWN2_PluginHost* host)
+void PluginManager::InitializeAll(const NWN2PluginHost* host)
 {
     for (auto& plugin : _loaded)
     {
@@ -96,7 +96,7 @@ void PluginManager::UnloadAll()
     _byId.clear();
 }
 
-NWN2_Plugin* PluginManager::FindById(const std::string& id) const
+NWN2Plugin* PluginManager::FindById(const std::string& id) const
 {
     auto it = _byId.find(id);
     return it != _byId.end() ? it->second : nullptr;

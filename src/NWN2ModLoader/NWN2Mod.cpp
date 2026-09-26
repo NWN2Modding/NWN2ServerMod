@@ -14,7 +14,7 @@ SetBinaryDataFunc NWN2Mod::_SetBinaryData;
 GetBinaryDataFunc NWN2Mod::_GetBinaryData;
 RunScriptFunc NWN2Mod::_RunScript;
 SendServerToPlayerChatMessageFunc NWN2Mod::_SendServerToPlayerChatMessage;
-NWN2_ChatHookFunc NWN2Mod::_ChatHook = nullptr;
+NWN2ChatHookFunc NWN2Mod::_ChatHook = nullptr;
 
 std::expected<void, uint32_t> NWN2Mod::Initialize()
 {
@@ -176,7 +176,7 @@ std::expected<void, std::string> NWN2Mod::DoHooks()
 
 void __cdecl NWN2Mod::NWNXSetString(const char* plugin, const char* function, const char* param1, int param2, const char* value)
 {
-    NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
+    NWN2Plugin* target = Current->_PluginManager.FindById(plugin);
     if (!NWN2_HAS_FIELD(target, OnNWNXSetString) || !target->OnNWNXSetString)
     {
         NWN2Mod::Log("NWNXSetString: no plugin registered for '{}', or it does not handle this call.", plugin);
@@ -188,7 +188,7 @@ void __cdecl NWN2Mod::NWNXSetString(const char* plugin, const char* function, co
 
 void __cdecl NWN2Mod::NWNXSetInt(const char* plugin, const char* function, const char* param1, int param2, int value)
 {
-    NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
+    NWN2Plugin* target = Current->_PluginManager.FindById(plugin);
     if (!NWN2_HAS_FIELD(target, OnNWNXSetInt) || !target->OnNWNXSetInt)
     {
         NWN2Mod::Log("NWNXSetInt: no plugin registered for '{}', or it does not handle this call.", plugin);
@@ -200,7 +200,7 @@ void __cdecl NWN2Mod::NWNXSetInt(const char* plugin, const char* function, const
 
 void __cdecl NWN2Mod::NWNXSetFloat(const char* plugin, const char* function, const char* param1, int param2, float value)
 {
-    NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
+    NWN2Plugin* target = Current->_PluginManager.FindById(plugin);
     if (!NWN2_HAS_FIELD(target, OnNWNXSetFloat) || !target->OnNWNXSetFloat)
     {
         NWN2Mod::Log("NWNXSetFloat: no plugin registered for '{}', or it does not handle this call.", plugin);
@@ -212,7 +212,7 @@ void __cdecl NWN2Mod::NWNXSetFloat(const char* plugin, const char* function, con
 
 namespace
 {
-    /// The loader's side of NWN2_StringSink, handed to a plugin's OnNWNXGetString. The std::string
+    /// The loader's side of NWN2StringSink, handed to a plugin's OnNWNXGetString. The std::string
     /// backing it lives entirely in this DLL; the plugin only ever sees the three function pointers,
     /// so no STL type crosses the boundary.
     class StringSink
@@ -231,7 +231,7 @@ namespace
         StringSink(const StringSink&) = delete;
         StringSink& operator=(const StringSink&) = delete;
 
-        NWN2_StringSink* Abi() { return &_abi; }
+        NWN2StringSink* Abi() { return &_abi; }
 
         void Clear()
         {
@@ -281,7 +281,7 @@ namespace
             static_cast<StringSink*>(self)->Clear();
         }
 
-        NWN2_StringSink _abi{};
+        NWN2StringSink _abi{};
         std::string _value;
         bool _handled = false;
     };
@@ -294,7 +294,7 @@ const char *__cdecl NWN2Mod::NWNXGetString(const char* plugin, const char* funct
     static StringSink result;
     result.Clear();
 
-    NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
+    NWN2Plugin* target = Current->_PluginManager.FindById(plugin);
     if (NWN2_HAS_FIELD(target, OnNWNXGetString) && target->OnNWNXGetString)
     {
         target->OnNWNXGetString(target->self, function, param1, param2, result.Abi());
@@ -312,7 +312,7 @@ const char *__cdecl NWN2Mod::NWNXGetString(const char* plugin, const char* funct
 int __cdecl NWN2Mod::NWNXGetInt(const char* plugin, const char* function, const char* param1, int param2)
 {
     int value = 0;
-    NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
+    NWN2Plugin* target = Current->_PluginManager.FindById(plugin);
     if (NWN2_HAS_FIELD(target, OnNWNXGetInt) && target->OnNWNXGetInt
         && target->OnNWNXGetInt(target->self, function, param1, param2, &value))
     {
@@ -326,7 +326,7 @@ int __cdecl NWN2Mod::NWNXGetInt(const char* plugin, const char* function, const 
 float __cdecl NWN2Mod::NWNXGetFloat(const char* plugin, const char* function, const char* param1, int param2)
 {
     float value = 0.0f;
-    NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
+    NWN2Plugin* target = Current->_PluginManager.FindById(plugin);
     if (NWN2_HAS_FIELD(target, OnNWNXGetFloat) && target->OnNWNXGetFloat
         && target->OnNWNXGetFloat(target->self, function, param1, param2, &value))
     {
@@ -380,7 +380,7 @@ bool __fastcall NWN2Mod::HookSetBinaryData(
     // varType is part of the real SetBinaryData's signature (kept here so this hook's own ABI
     // matches what the engine calls), but it's dead at every known call site, so it's not
     // forwarded to the plugin to avoid representing it as meaningful data.
-    NWN2_Plugin* plugin = Current->_PluginManager.FindById(pCampNameExoStr->m_sString);
+    NWN2Plugin* plugin = Current->_PluginManager.FindById(pCampNameExoStr->m_sString);
     if (!NWN2_HAS_FIELD(plugin, OnSetBinaryData) || !plugin->OnSetBinaryData)
     {
         return false;
@@ -392,7 +392,7 @@ bool __fastcall NWN2Mod::HookSetBinaryData(
 
 namespace
 {
-    /// The loader's side of NWN2_BinarySink, handed to a plugin's OnGetBinaryData. Owns the
+    /// The loader's side of NWN2BinarySink, handed to a plugin's OnGetBinaryData. Owns the
     /// DataBlock the plugin allocates into, if it allocates one.
     ///
     /// Allocating builds a std::shared_ptr<DataBlock> control block with std::make_shared, compiled
@@ -414,7 +414,7 @@ namespace
         BinarySink(const BinarySink&) = delete;
         BinarySink& operator=(const BinarySink&) = delete;
 
-        NWN2_BinarySink* Abi() { return &_abi; }
+        NWN2BinarySink* Abi() { return &_abi; }
 
         bool Handled() const { return (bool)_block; }
         std::shared_ptr<DataBlock> Take() { return std::move(_block); }
@@ -453,7 +453,7 @@ namespace
             static_cast<BinarySink*>(self)->_block.reset();
         }
 
-        NWN2_BinarySink _abi{};
+        NWN2BinarySink _abi{};
         std::shared_ptr<DataBlock> _block;
     };
 }
@@ -468,7 +468,7 @@ DataBlockPtr* __fastcall NWN2Mod::HookGetBinaryData(
     NWN2Mod::Log("GetBinaryData called.");
 
     // The campaign name is the plugin selector, same as HookSetBinaryData.
-    NWN2_Plugin* plugin = Current->_PluginManager.FindById(pCampNameExoStr->m_sString);
+    NWN2Plugin* plugin = Current->_PluginManager.FindById(pCampNameExoStr->m_sString);
     if (NWN2_HAS_FIELD(plugin, OnGetBinaryData) && plugin->OnGetBinaryData)
     {
         BinarySink result;
@@ -729,36 +729,36 @@ bool NWN2Mod::RunScript(const char* script, uint32_t objectId) const
     return _RunScript(nullptr, &scriptName, objectId, 0, 0) != 0;
 }
 
-NWN2_ChatHookFunc NWN2Mod::RegisterChatHook(NWN2_ChatHookFunc hook)
+NWN2ChatHookFunc NWN2Mod::RegisterChatHook(NWN2ChatHookFunc hook)
 {
-    NWN2_ChatHookFunc previous = _ChatHook;
+    NWN2ChatHookFunc previous = _ChatHook;
     _ChatHook = hook;
     return previous;
 }
 
-NWN2_Plugin* NWN2_CALL NWN2Mod::HostGetPlugin(void* self, const char* id) noexcept
+NWN2Plugin* NWN2_CALL NWN2Mod::HostGetPlugin(void* self, const char* id) noexcept
 {
     return static_cast<NWN2Mod*>(self)->GetPlugin(id);
 }
 
-NWN2_Result NWN2_CALL NWN2Mod::HostRunScript(void* self, const char* script, uint32_t objectId) noexcept
+NWN2Result NWN2_CALL NWN2Mod::HostRunScript(void* self, const char* script, uint32_t objectId) noexcept
 {
     if (!script || !*script)
     {
-        return NWN2_Result{ NWN2_E_BAD_ARGUMENT, "no script name was given" };
+        return NWN2Result{ NWN2_E_BAD_ARGUMENT, "no script name was given" };
     }
 
     if (!static_cast<NWN2Mod*>(self)->RunScript(script, objectId))
     {
         // The engine reports one failure for everything, so this can't say which it was: a missing
         // .ncs, one that won't compile, or a script VM that isn't up yet.
-        return NWN2_Result{ NWN2_E_NOT_FOUND, "the script did not run" };
+        return NWN2Result{ NWN2_E_NOT_FOUND, "the script did not run" };
     }
 
-    return NWN2_Result{ 0, nullptr };
+    return NWN2Result{ 0, nullptr };
 }
 
-NWN2_ChatHookFunc NWN2_CALL NWN2Mod::HostRegisterChatHook(void* self, NWN2_ChatHookFunc hook) noexcept
+NWN2ChatHookFunc NWN2_CALL NWN2Mod::HostRegisterChatHook(void* self, NWN2ChatHookFunc hook) noexcept
 {
     return static_cast<NWN2Mod*>(self)->RegisterChatHook(hook);
 }
