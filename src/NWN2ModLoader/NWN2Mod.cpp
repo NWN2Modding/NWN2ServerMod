@@ -177,7 +177,7 @@ std::expected<void, std::string> NWN2Mod::DoHooks()
 void __cdecl NWN2Mod::NWNXSetString(const char* plugin, const char* function, const char* param1, int param2, const char* value)
 {
     NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
-    if (!NWN2_HAS_FIELD(target, NWN2_Plugin, OnNWNXSetString) || !target->OnNWNXSetString)
+    if (!NWN2_HAS_FIELD(target, OnNWNXSetString) || !target->OnNWNXSetString)
     {
         NWN2Mod::Log("NWNXSetString: no plugin registered for '{}', or it does not handle this call.", plugin);
         return;
@@ -189,7 +189,7 @@ void __cdecl NWN2Mod::NWNXSetString(const char* plugin, const char* function, co
 void __cdecl NWN2Mod::NWNXSetInt(const char* plugin, const char* function, const char* param1, int param2, int value)
 {
     NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
-    if (!NWN2_HAS_FIELD(target, NWN2_Plugin, OnNWNXSetInt) || !target->OnNWNXSetInt)
+    if (!NWN2_HAS_FIELD(target, OnNWNXSetInt) || !target->OnNWNXSetInt)
     {
         NWN2Mod::Log("NWNXSetInt: no plugin registered for '{}', or it does not handle this call.", plugin);
         return;
@@ -201,7 +201,7 @@ void __cdecl NWN2Mod::NWNXSetInt(const char* plugin, const char* function, const
 void __cdecl NWN2Mod::NWNXSetFloat(const char* plugin, const char* function, const char* param1, int param2, float value)
 {
     NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
-    if (!NWN2_HAS_FIELD(target, NWN2_Plugin, OnNWNXSetFloat) || !target->OnNWNXSetFloat)
+    if (!NWN2_HAS_FIELD(target, OnNWNXSetFloat) || !target->OnNWNXSetFloat)
     {
         NWN2Mod::Log("NWNXSetFloat: no plugin registered for '{}', or it does not handle this call.", plugin);
         return;
@@ -295,7 +295,7 @@ const char *__cdecl NWN2Mod::NWNXGetString(const char* plugin, const char* funct
     result.Clear();
 
     NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
-    if (NWN2_HAS_FIELD(target, NWN2_Plugin, OnNWNXGetString) && target->OnNWNXGetString)
+    if (NWN2_HAS_FIELD(target, OnNWNXGetString) && target->OnNWNXGetString)
     {
         target->OnNWNXGetString(target->self, function, param1, param2, result.Abi());
     }
@@ -313,7 +313,7 @@ int __cdecl NWN2Mod::NWNXGetInt(const char* plugin, const char* function, const 
 {
     int value = 0;
     NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
-    if (NWN2_HAS_FIELD(target, NWN2_Plugin, OnNWNXGetInt) && target->OnNWNXGetInt
+    if (NWN2_HAS_FIELD(target, OnNWNXGetInt) && target->OnNWNXGetInt
         && target->OnNWNXGetInt(target->self, function, param1, param2, &value))
     {
         return value;
@@ -327,7 +327,7 @@ float __cdecl NWN2Mod::NWNXGetFloat(const char* plugin, const char* function, co
 {
     float value = 0.0f;
     NWN2_Plugin* target = Current->_PluginManager.FindById(plugin);
-    if (NWN2_HAS_FIELD(target, NWN2_Plugin, OnNWNXGetFloat) && target->OnNWNXGetFloat
+    if (NWN2_HAS_FIELD(target, OnNWNXGetFloat) && target->OnNWNXGetFloat
         && target->OnNWNXGetFloat(target->self, function, param1, param2, &value))
     {
         return value;
@@ -381,7 +381,7 @@ bool __fastcall NWN2Mod::HookSetBinaryData(
     // matches what the engine calls), but it's dead at every known call site, so it's not
     // forwarded to the plugin to avoid representing it as meaningful data.
     NWN2_Plugin* plugin = Current->_PluginManager.FindById(pCampNameExoStr->m_sString);
-    if (!NWN2_HAS_FIELD(plugin, NWN2_Plugin, OnSetBinaryData) || !plugin->OnSetBinaryData)
+    if (!NWN2_HAS_FIELD(plugin, OnSetBinaryData) || !plugin->OnSetBinaryData)
     {
         return false;
     }
@@ -469,7 +469,7 @@ DataBlockPtr* __fastcall NWN2Mod::HookGetBinaryData(
 
     // The campaign name is the plugin selector, same as HookSetBinaryData.
     NWN2_Plugin* plugin = Current->_PluginManager.FindById(pCampNameExoStr->m_sString);
-    if (NWN2_HAS_FIELD(plugin, NWN2_Plugin, OnGetBinaryData) && plugin->OnGetBinaryData)
+    if (NWN2_HAS_FIELD(plugin, OnGetBinaryData) && plugin->OnGetBinaryData)
     {
         BinarySink result;
         plugin->OnGetBinaryData(plugin->self, pVarNameExoStr->m_sString, pPlayerExoStr->m_sString, result.Abi());

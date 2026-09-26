@@ -67,7 +67,7 @@ namespace nwn2
         /// it belongs to another DLL, possibly built by another compiler, with its own heap.
         NWN2_Plugin* GetPlugin(const char* id) const noexcept
         {
-            return NWN2_HAS_FIELD(_host, NWN2_PluginHost, GetPlugin) && _host->GetPlugin
+            return NWN2_HAS_FIELD(_host, GetPlugin) && _host->GetPlugin
                 ? _host->GetPlugin(_host->self, id)
                 : nullptr;
         }
@@ -76,7 +76,7 @@ namespace nwn2
         /// what OBJECT_SELF resolves to inside it.
         NWN2_Result RunScript(const char* script, uint32_t objectId) const noexcept
         {
-            return NWN2_HAS_FIELD(_host, NWN2_PluginHost, RunScript) && _host->RunScript
+            return NWN2_HAS_FIELD(_host, RunScript) && _host->RunScript
                 ? _host->RunScript(_host->self, script, objectId)
                 : Fail(NWN2_E_UNSUPPORTED, "RunScript is not provided by this loader");
         }
@@ -92,7 +92,7 @@ namespace nwn2
         /// not swallow a message, so plugins that registered earlier still see it.
         NWN2_ChatHookFunc RegisterChatHook(NWN2_ChatHookFunc hook) const noexcept
         {
-            return NWN2_HAS_FIELD(_host, NWN2_PluginHost, RegisterChatHook) && _host->RegisterChatHook
+            return NWN2_HAS_FIELD(_host, RegisterChatHook) && _host->RegisterChatHook
                 ? _host->RegisterChatHook(_host->self, hook)
                 : nullptr;
         }
@@ -102,7 +102,7 @@ namespace nwn2
         template <typename T>
         T* QueryService() const noexcept
         {
-            return NWN2_HAS_FIELD(_host, NWN2_PluginHost, QueryService) && _host->QueryService
+            return NWN2_HAS_FIELD(_host, QueryService) && _host->QueryService
                 ? static_cast<T*>(_host->QueryService(_host->self, T::kName))
                 : nullptr;
         }
@@ -122,7 +122,7 @@ namespace nwn2
         /// Calling this again replaces the previous buffer.
         uint8_t* Allocate(size_t size) const noexcept
         {
-            return NWN2_HAS_FIELD(_sink, NWN2_BinarySink, Allocate) && _sink->Allocate
+            return NWN2_HAS_FIELD(_sink, Allocate) && _sink->Allocate
                 ? _sink->Allocate(_sink->self, size)
                 : nullptr;
         }
@@ -130,7 +130,7 @@ namespace nwn2
         /// Throws away anything written so far, back to "no data".
         void Clear() const noexcept
         {
-            if (NWN2_HAS_FIELD(_sink, NWN2_BinarySink, Clear) && _sink->Clear)
+            if (NWN2_HAS_FIELD(_sink, Clear) && _sink->Clear)
             {
                 _sink->Clear(_sink->self);
             }
@@ -151,7 +151,7 @@ namespace nwn2
         /// The loader adds the terminator, so length excludes it.
         char* Allocate(size_t length) const noexcept
         {
-            return NWN2_HAS_FIELD(_sink, NWN2_StringSink, Allocate) && _sink->Allocate
+            return NWN2_HAS_FIELD(_sink, Allocate) && _sink->Allocate
                 ? _sink->Allocate(_sink->self, length)
                 : nullptr;
         }
@@ -159,7 +159,7 @@ namespace nwn2
         /// Copies a null-terminated string in. Easier than Allocate when you already have one.
         void Set(const char* value) const noexcept
         {
-            if (NWN2_HAS_FIELD(_sink, NWN2_StringSink, Set) && _sink->Set)
+            if (NWN2_HAS_FIELD(_sink, Set) && _sink->Set)
             {
                 _sink->Set(_sink->self, value);
             }
@@ -168,7 +168,7 @@ namespace nwn2
         /// Throws away anything written so far, back to "no value".
         void Clear() const noexcept
         {
-            if (NWN2_HAS_FIELD(_sink, NWN2_StringSink, Clear) && _sink->Clear)
+            if (NWN2_HAS_FIELD(_sink, Clear) && _sink->Clear)
             {
                 _sink->Clear(_sink->self);
             }

@@ -49,7 +49,7 @@ void PluginManager::LoadPlugins(const NWN2_PluginHost* host, const std::vector<s
 
         // Everything else routes by plugin ID, so a plugin whose struct doesn't even reach
         // GetPluginId can't be used at all.
-        if (!NWN2_HAS_FIELD(instance, NWN2_Plugin, GetPluginId) || !instance->GetPluginId)
+        if (!NWN2_HAS_FIELD(instance, GetPluginId) || !instance->GetPluginId)
         {
             NWN2Mod::Log("Plugin '{}' provides no GetPluginId (struct size {}). Skipping.", path, instance->structSize);
             destroyFunc(instance);
@@ -58,18 +58,17 @@ void PluginManager::LoadPlugins(const NWN2_PluginHost* host, const std::vector<s
         }
 
         const char* pluginId = instance->GetPluginId(instance->self);
-        std::string id = pluginId ? pluginId : "";
-        if (id.empty() || _byId.contains(id))
+        if (!pluginId || _byId.contains(pluginId))
         {
-            NWN2Mod::Log("Plugin '{}' has a missing or duplicate ID ('{}'). Skipping.", path, id);
+            NWN2Mod::Log("Plugin '{}' has a missing or duplicate ID ('{}'). Skipping.", path, pluginId ? pluginId : "");
             destroyFunc(instance);
             ::FreeLibrary(module);
             continue;
         }
 
-        NWN2Mod::Log("Loaded plugin '{}' from '{}'.", id, path);
+        NWN2Mod::Log("Loaded plugin '{}' from '{}'.", pluginId, path);
 
-        _byId.emplace(id, instance);
+        _byId.emplace(pluginId, instance);
         _loaded.push_back({ module, instance, destroyFunc });
     }
 }
@@ -78,7 +77,7 @@ void PluginManager::InitializeAll(const NWN2_PluginHost* host)
 {
     for (auto& plugin : _loaded)
     {
-        if (NWN2_HAS_FIELD(plugin.instance, NWN2_Plugin, OnInitialize) && plugin.instance->OnInitialize)
+        if (NWN2_HAS_FIELD(plugin.instance, OnInitialize) && plugin.instance->OnInitialize)
         {
             plugin.instance->OnInitialize(plugin.instance->self, host);
         }
