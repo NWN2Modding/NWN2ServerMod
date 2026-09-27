@@ -9,13 +9,13 @@
 #include "CExoString.h"
 #include "PluginManager.h"
 
-/// <summary>The real engine's <c>CServerExoAppInternal::InitializeNetLayer</c>.</summary>
+/// The real CServerExoAppInternal::InitializeNetLayer.
 typedef void(__fastcall* InitializeNetLayerFunc)(void* pThis, bool);
 
-/// <summary>The real engine's <c>CNWVirtualMachineCommands</c> command-table initializer.</summary>
+/// The real CNWVirtualMachineCommands command-table initializer.
 typedef void(__fastcall* InitializeCommandsFunc)(void* pThis);
 
-/// <summary>The real engine's <c>CCampaignDB::SetBinaryData</c>.</summary>
+/// The real CCampaignDB::SetBinaryData.
 typedef bool(__fastcall* SetBinaryDataFunc)(
     void* pThisCampaignDB,
     CExoString* pCampNameExoStr,
@@ -24,7 +24,7 @@ typedef bool(__fastcall* SetBinaryDataFunc)(
     DataBlock* pDataBlock,
     uint16_t varType);
 
-/// <summary>The real engine's <c>CCampaignDB::GetBinaryData</c>.</summary>
+/// The real CCampaignDB::GetBinaryData.
 typedef DataBlockPtr*(__fastcall* GetBinaryDataFunc)(
     void* pThisCampaignDB,
     DataBlockPtr* pRetVal,
@@ -32,30 +32,29 @@ typedef DataBlockPtr*(__fastcall* GetBinaryDataFunc)(
     CExoString* pVarNameExoStr,
     CExoString* pPlayerExoStr);
 
-/// <summary>
-/// The real engine's <c>CNWSMessage::SendServerToPlayerChatMessage</c>: the single function every
-/// chat message (Talk/Shout/Whisper/Tell/Party and their DM variants) funnels through before NWN2
-/// sends it to any client.
-/// </summary>
+/// The real CNWSMessage::SendServerToPlayerChatMessage: the dispatcher player chat (Talk, Shout,
+/// Whisper, Tell, Party and their DM variants) and server tells go through on their way to clients.
+/// It is not the only way text reaches a player - NWScript's SendMessageToPC is delivered as a
+/// feedback message instead, and a few engine paths call the per-channel senders directly.
+///
+/// Parameter names are the engine's own, from the server PDB. extraMessage is the exception: that
+/// parameter is optimized out of the debug info, so the name is ours.
 typedef int(__fastcall* SendServerToPlayerChatMessageFunc)(
     void* pThis,
-    uint8_t mode,
-    uint32_t senderId,
-    CExoString* message,
-    uint32_t targetId,
-    void* clientList,
+    uint8_t nChatMessageType,
+    uint32_t oidSpeaker,
+    CExoString* sSpeakerMessage,
+    uint32_t nTellPlayerId,
+    void* pPlayerList,
     CExoString* extraMessage,
-    bool runScriptFlag);
+    bool bTriggerEvent);
 
-/// <summary>
-/// The real engine's <c>CVirtualMachine::RunScript(CExoString*, unsigned long, int, PARAMTER_VALIDATION)</c>
-/// convenience overload, which always runs against the global <c>g_pVirtualMachine</c>.
-/// </summary>
-/// <remarks>
-/// This is called as a plain function, not through a <c>CVirtualMachine*</c>: the first parameter
-/// is a dead "this" slot the function itself overwrites with <c>g_pVirtualMachine</c> before ever
-/// reading it, so any value (including <see langword="nullptr"/>) is safe to pass for it.
-/// </remarks>
+/// The real CVirtualMachine::RunScript convenience overload, which always runs against the global
+/// g_pVirtualMachine.
+///
+/// It is called as a plain function, not through a CVirtualMachine*: the first parameter is a dead
+/// "this" slot the function overwrites with g_pVirtualMachine before ever reading it, so any value
+/// is safe to pass for it.
 typedef int(__fastcall* RunScriptFunc)(
     void* unusedThis,
     CExoString* pScriptExoStr,
@@ -63,69 +62,73 @@ typedef int(__fastcall* RunScriptFunc)(
     int flag,
     int validation);
 
-/// <summary>
-/// Owns the whole lifetime of the injected loader: locating and hooking the server's internal
-/// functions, dispatching NWNX/campaign-object calls to plugins, and logging.
-/// </summary>
-/// <remarks>
-/// Publicly inherits <see cref="IPluginHost"/> so a plugin can call <see cref="GetPlugin"/> through
-/// that small vtable interface (see <see cref="PluginManager::LoadPlugins"/>/
-/// <see cref="PluginManager::InitializeAll"/>), without needing this class's real (much heavier)
-/// definition, or to link against NWN2ModLoader.lib at all.
-/// </remarks>
-class NWN2Mod : public IPluginHost
+/// Owns the whole lifetime of the injected loader: finding and hooking the server's internal
+/// functions, dispatching NWNX and campaign-object calls to plugins, and logging.
+///
+/// Plugins never see this class. They get HostAbi(), a plain C struct of function pointers, so a
+/// plugin needs neither this class's real definition nor a C++ compiler that matches ours.
+class NWN2Mod
 {
 public:
-    /// <summary>Constructs the loader with an already-loaded config.</summary>
-    /// <param name="config">The parsed <c>nwn2mod.config</c>.</param>
+    /// Takes an already-parsed nwn2mod.config.
     NWN2Mod(const Config config)
         : _Config(config)
         , _NWVirtualMachineCommands(nullptr)
     {
+        // The host API every plugin is handed. self is this loader; each entry is a static thunk
+        // that recovers it and forwards to the matching member below.
+        _HostAbi.structSize = sizeof(_HostAbi);
+        _HostAbi.self = this;
+        _HostAbi.GetPlugin = &HostGetPlugin;
+        _HostAbi.RunScript = &HostRunScript;
+        _HostAbi.RegisterChatHook = &HostRegisterChatHook;
+        _HostAbi.QueryService = &HostQueryService;
     }
 
-    /// <summary>Hooks the target process's internal functions and loads/initializes all configured plugins.</summary>
-    /// <returns>An unexpected Win32-style error code on failure.</returns>
+    // _HostAbi.self points at this object, so a copy would hand plugins a pointer to the original.
+    NWN2Mod(const NWN2Mod&) = delete;
+    NWN2Mod& operator=(const NWN2Mod&) = delete;
+
+    /// Hooks the server's internal functions, then loads and initializes every configured plugin.
+    /// Fails with a Win32-style error code.
     std::expected<void, uint32_t> Initialize();
 
-    /// <summary>Loads the config at <paramref name="configPath"/>, constructs <see cref="Current"/>, and initializes it.</summary>
-    /// <param name="configPath">The full path to the config file to load.</param>
-    /// <returns>An unexpected Win32-style error code on failure.</returns>
+    /// Loads the config at configPath, constructs Current, and initializes it. Fails with a
+    /// Win32-style error code.
     static std::expected<void, uint32_t> Initialize(std::wstring_view configPath);
 
-    /// <summary>The single loader instance for this process, constructed by <see cref="Initialize(std::wstring_view)"/>.</summary>
+    /// The one loader instance for this process.
     static std::unique_ptr<NWN2Mod> Current;
 
-    /// <summary>Logs a message at the given level through <see cref="Current"/>'s logger.</summary>
-    /// <param name="level">The severity to log at.</param>
-    /// <param name="fmt">A <c>std::format</c> format string.</param>
-    /// <param name="args">The format arguments.</param>
+    /// Logs through Current's logger at the given level.
     template <typename... Args>
     static void Log(Logger::Level level, std::format_string<Args...> fmt, Args&&... args)
     {
         Current->_Logger->log(level, fmt, std::forward<Args>(args)...);
     }
 
-    /// <summary>Logs an informational message through <see cref="Current"/>'s logger.</summary>
-    /// <param name="fmt">A <c>std::format</c> format string.</param>
-    /// <param name="args">The format arguments.</param>
+    /// Logs through Current's logger at Info.
     template <typename... Args>
     static void Log(std::format_string<Args...> fmt, Args&&... args)
     {
         Current->_Logger->log(Logger::Level::Info, fmt, std::forward<Args>(args)...);
     }
 
-    /// <summary>See <see cref="IPluginHost::GetPlugin"/>.</summary>
-    IPlugin* GetPlugin(const char* id) const override
+    /// The host API handed to every plugin, at load time and again at initialization.
+    const NWN2PluginHost* HostAbi() const { return &_HostAbi; }
+
+    /// A loaded plugin by ID, or null. Backs NWN2PluginHost::GetPlugin.
+    NWN2Plugin* GetPlugin(const char* id) const
     {
         return _PluginManager.FindById(id ? id : "");
     }
 
-    /// <summary>See <see cref="IPluginHost::RunScript"/>.</summary>
-    bool RunScript(const char* script, uint32_t objectId) const override;
+    /// Runs a compiled script. Backs NWN2PluginHost::RunScript.
+    bool RunScript(const char* script, uint32_t objectId) const;
 
-    /// <summary>See <see cref="IPluginHost::RegisterChatHook"/>.</summary>
-    ChatHookFunc RegisterChatHook(ChatHookFunc hook) override;
+    /// Registers the chat interceptor and returns the one registered before it. Backs
+    /// NWN2PluginHost::RegisterChatHook.
+    NWN2ChatHookFunc RegisterChatHook(NWN2ChatHookFunc hook);
 
 private:
     static InitializeNetLayerFunc _InitializeNetLayer;
@@ -135,53 +138,53 @@ private:
     static RunScriptFunc _RunScript;
     static SendServerToPlayerChatMessageFunc _SendServerToPlayerChatMessage;
 
-    /// <summary>The currently registered chat hook, or <see langword="nullptr"/> if none is (see <see cref="RegisterChatHook"/>).</summary>
-    static ChatHookFunc _ChatHook;
+    /// The registered chat hook, or null if no plugin has registered one.
+    static NWN2ChatHookFunc _ChatHook;
 
-    /// <summary>Patches the <c>NWNX*</c> command function pointers directly into the game's command table.</summary>
-    /// <remarks>NWN2Server calls these through the table by pointer, so no detouring is needed for them.</remarks>
+    /// The four NWN2PluginHost entry points. Each one recovers the loader from self and forwards to
+    /// the matching member above. All of them are noexcept: an exception must never unwind out of
+    /// this DLL into plugin code, which may have been built by an entirely different compiler.
+    static NWN2Plugin* NWN2_CALL HostGetPlugin(void* self, const char* id) noexcept;
+    static NWN2Result NWN2_CALL HostRunScript(void* self, const char* script, uint32_t objectId) noexcept;
+    static NWN2ChatHookFunc NWN2_CALL HostRegisterChatHook(void* self, NWN2ChatHookFunc hook) noexcept;
+    static void* NWN2_CALL HostQueryService(void* self, const char* versionedName) noexcept;
+
+    /// Writes the NWNX* handlers straight into the game's command table. NWN2Server calls them
+    /// through the table by pointer, so they need no detour.
     void MapNWNXFunctions();
 
-    /// <summary>Handler for a script's <c>NWNXSetString</c> call, wired directly into the command table.</summary>
+    /// Handler for a script's NWNXSetString call, wired into the command table.
     static void __cdecl NWNXSetString(const char *plugin, const char *function, const char *param1, int param2, const char *value);
 
-    /// <summary>Handler for a script's <c>NWNXSetInt</c> call, wired directly into the command table.</summary>
+    /// Handler for a script's NWNXSetInt call, wired into the command table.
     static void __cdecl NWNXSetInt(const char* plugin, const char* function, const char* param1, int param2, int value);
 
-    /// <summary>Handler for a script's <c>NWNXSetFloat</c> call, wired directly into the command table.</summary>
+    /// Handler for a script's NWNXSetFloat call, wired into the command table.
     static void __cdecl NWNXSetFloat(const char* plugin, const char* function, const char* param1, int param2, float value);
 
-    /// <summary>Handler for a script's <c>NWNXGetString</c> call, wired directly into the command table.</summary>
-    /// <returns>
-    /// A pointer valid until the next call to this function - the engine never modifies the
-    /// string it's given, so a single reused static buffer is safe here. Empty if no plugin is
-    /// registered for <paramref name="plugin"/>, or its <c>OnNWNXGetString</c> left the result untouched.
-    /// </returns>
+    /// Handler for a script's NWNXGetString call. The returned pointer stays valid until the next
+    /// call - the engine never modifies the string it is given, so one reused static buffer is safe
+    /// - and is empty if no plugin answered.
     static const char * __cdecl NWNXGetString(const char* plugin, const char* function, const char* param1, int param2);
 
-    /// <summary>Handler for a script's <c>NWNXGetInt</c> call, wired directly into the command table.</summary>
-    /// <returns>
-    /// <c>0</c> if no plugin is registered for <paramref name="plugin"/>, or its
-    /// <c>OnNWNXGetInt</c> returned <see langword="false"/>. The script has no way to distinguish
-    /// this from a genuine value of <c>0</c>.
-    /// </returns>
+    /// Handler for a script's NWNXGetInt call. Returns 0 if no plugin answered, which the script
+    /// cannot tell apart from a genuine 0.
     static int __cdecl NWNXGetInt(const char* plugin, const char* function, const char* param1, int param2);
 
-    /// <summary>Handler for a script's <c>NWNXGetFloat</c> call, wired directly into the command table.</summary>
-    /// <returns>
-    /// <c>0.0</c> if no plugin is registered for <paramref name="plugin"/>, or its
-    /// <c>OnNWNXGetFloat</c> returned <see langword="false"/>. The script has no way to distinguish
-    /// this from a genuine value of <c>0.0</c>.
-    /// </returns>
+    /// Handler for a script's NWNXGetFloat call. Returns 0.0 if no plugin answered, which the script
+    /// cannot tell apart from a genuine 0.0.
     static float __cdecl NWNXGetFloat(const char* plugin, const char* function, const char* param1, int param2);
 
-    /// <summary>Detour target for <c>CServerExoAppInternal::InitializeNetLayer</c>; runs <see cref="FinishInitialization"/> then chains to the real function.</summary>
+    /// Detour for CServerExoAppInternal::InitializeNetLayer: runs FinishInitialization, then chains
+    /// to the real function.
     static void __fastcall HookInitializeNetLayer(void *pThis, bool param);
 
-    /// <summary>Detour target for the command-table initializer; captures <c>pThis</c> as <see cref="_NWVirtualMachineCommands"/> then chains to the real function.</summary>
+    /// Detour for the command-table initializer: saves pThis as _NWVirtualMachineCommands, then
+    /// chains to the real function.
     static void __fastcall HookInitializeCommands(void* pThis);
 
-    /// <summary>Detour target for <c>CCampaignDB::SetBinaryData</c>; routes to the plugin whose ID matches the campaign name instead of calling through.</summary>
+    /// Detour for CCampaignDB::SetBinaryData: routes to the plugin whose ID matches the campaign
+    /// name instead of calling through.
     static bool __fastcall HookSetBinaryData(void* pThisCampaignDB,
         CExoString* pCampNameExoStr,
         CExoString* pVarNameExoStr,
@@ -189,74 +192,72 @@ private:
         DataBlock* pDataBlock,
         uint16_t varType);
 
-    /// <summary>Detour target for <c>CCampaignDB::GetBinaryData</c>; routes to the plugin whose ID matches the campaign name instead of calling through.</summary>
+    /// Detour for CCampaignDB::GetBinaryData: routes to the plugin whose ID matches the campaign
+    /// name instead of calling through.
     static DataBlockPtr* __fastcall HookGetBinaryData(void* pThisCampaignDB,
         DataBlockPtr* pRetVal,
         CExoString* pCampNameExoStr,
         CExoString* pVarNameExoStr,
         CExoString* pPlayerExoStr);
 
-    /// <summary>
-    /// Detour target for <c>CNWSMessage::SendServerToPlayerChatMessage</c>; offers the message to
-    /// <see cref="_ChatHook"/> (if one is registered) before deciding whether to call through.
-    /// </summary>
+    /// Detour for CNWSMessage::SendServerToPlayerChatMessage: offers the message to the registered
+    /// chat hook, if there is one, before deciding whether to call through.
     static int __fastcall HookSendServerToPlayerChatMessage(
         void* pThis,
-        uint8_t mode,
-        uint32_t senderId,
-        CExoString* message,
-        uint32_t targetId,
-        void* clientList,
+        uint8_t nChatMessageType,
+        uint32_t oidSpeaker,
+        CExoString* sSpeakerMessage,
+        uint32_t nTellPlayerId,
+        void* pPlayerList,
         CExoString* extraMessage,
-        bool runScriptFlag);
+        bool bTriggerEvent);
 
-    /// <summary>Resolves the absolute target address of a RIP-relative <c>LEA</c>/<c>MOV</c> instruction.</summary>
-    /// <param name="functionAddress">The base address the other offsets are relative to.</param>
-    /// <param name="instructionOffset">The offset of the instruction from <paramref name="functionAddress"/>.</param>
-    /// <param name="displacementOffset">The offset of the instruction's 4-byte signed displacement operand.</param>
-    /// <param name="instructionLength">The total length of the instruction, in bytes.</param>
-    /// <returns>The absolute address the instruction refers to.</returns>
+    /// Resolves the absolute address a RIP-relative LEA or MOV refers to. instructionOffset and
+    /// displacementOffset are measured from functionAddress; instructionLength is the whole
+    /// instruction's size in bytes.
     static uintptr_t ExtractRipRelativeAddress(uintptr_t functionAddress,
         size_t instructionOffset,
         size_t displacementOffset,
         size_t instructionLength);
 
-    /// <summary>Locates every hook target, validates the matched bytes, and attaches all Detours.</summary>
+    /// Finds every hook target, checks the bytes it matched, and attaches all the Detours.
     std::expected<void, std::string> DoHooks();
 
-    /// <summary>Locates <c>CNWVirtualMachineCommands</c>'s command-table initializer by byte pattern.</summary>
+    /// Finds CNWVirtualMachineCommands' command-table initializer by byte pattern.
     std::expected<void*, std::string> FindInitializeCommands();
 
-    /// <summary>Locates <c>CServerExoAppInternal::InitializeNetLayer</c> by byte pattern.</summary>
+    /// Finds CServerExoAppInternal::InitializeNetLayer by byte pattern.
     std::expected<void*, std::string> FindInitializeNetLayer();
 
-    /// <summary>Locates <c>CCampaignDB::SetBinaryData</c> by byte pattern.</summary>
+    /// Finds CCampaignDB::SetBinaryData by byte pattern.
     std::expected<void*, std::string> FindSetBinaryData();
 
-    /// <summary>Locates <c>CCampaignDB::GetBinaryData</c> by byte pattern.</summary>
+    /// Finds CCampaignDB::GetBinaryData by byte pattern.
     std::expected<void*, std::string> FindGetBinaryData();
 
-    /// <summary>Locates <c>CNWSMessage::SendServerToPlayerChatMessage</c> by byte pattern.</summary>
+    /// Finds CNWSMessage::SendServerToPlayerChatMessage by byte pattern.
     std::expected<void*, std::string> FindSendServerToPlayerChatMessage();
 
-    /// <summary>Locates the instruction that writes the <c>g_pVirtualMachine</c> global, by byte pattern.</summary>
+    /// Finds the instruction that writes the g_pVirtualMachine global, by byte pattern.
     std::expected<void*, std::string> FindVirtualMachineWrite();
 
-    /// <summary>Locates the <c>CVirtualMachine::RunScript</c> convenience overload by byte pattern.</summary>
+    /// Finds the CVirtualMachine::RunScript convenience overload by byte pattern.
     std::expected<void*, std::string> FindRunScript();
 
-    /// <summary>Runs once the command table is initialized: maps NWNX functions and fixes up <see cref="_VirtualMachine"/>.</summary>
+    /// Runs once the command table is initialized: maps the NWNX functions and fixes up
+    /// _VirtualMachine.
     void FinishInitialization();
 
     std::shared_ptr<Logger> _Logger;
     CNWVirtualMachineCommands *_NWVirtualMachineCommands;
 
-    /// <summary>
-    /// The real <c>g_pVirtualMachine</c> value, once <see cref="FinishInitialization"/> has fixed it up.
-    /// Null beforehand, which <see cref="RunScript"/> uses as its "the VM isn't ready yet" check.
-    /// </summary>
+    /// The real g_pVirtualMachine value, once FinishInitialization has fixed it up. Null before
+    /// that, which RunScript treats as "the VM isn't ready yet".
     void *_VirtualMachine;
 
     Config _Config;
     PluginManager _PluginManager;
+
+    /// The host API struct, filled in once by the constructor.
+    NWN2PluginHost _HostAbi{};
 };
