@@ -81,6 +81,15 @@ namespace nwn2
                 : Fail(NWN2_E_UNSUPPORTED, "RunScript is not provided by this loader");
         }
 
+        /// The object the running script was called on, like NWScript's OBJECT_SELF. Only
+        /// meaningful inside a callback from the loader; OBJECT_INVALID otherwise.
+        uint32_t GetCallingObject() const noexcept
+        {
+            return NWN2_HAS_FIELD(_host, GetCallingObject) && _host->GetCallingObject
+                ? _host->GetCallingObject(_host->self)
+                : NWN2_OBJECT_INVALID;
+        }
+
         /// Intercepts chat on its way to players. Returning true from the hook swallows the
         /// message, and stops the module's OnChat event firing for it.
         ///

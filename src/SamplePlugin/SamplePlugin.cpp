@@ -96,6 +96,7 @@ namespace
             GetLogger()("OnSetBinaryData(varName='{}', player='{}', size={})",
                 varName ? varName : "", player ? player : "", size);
 
+            _setBinaryCalls++;
             _binaryData[varName ? varName : ""] = std::vector<uint8_t>(data, data + size);
             return true;
         }
@@ -105,6 +106,7 @@ namespace
             GetLogger()("OnGetBinaryData(varName='{}', player='{}')",
                 varName ? varName : "", player ? player : "");
 
+            _getBinaryCalls++;
             auto it = _binaryData.find(varName ? varName : "");
             if (it == _binaryData.end())
             {
@@ -166,8 +168,24 @@ namespace
 
         bool OnNWNXGetInt(const char* function, const char* param1, int param2, int& outValue) override
         {
-            GetLogger()("OnNWNXGetInt(function='{}', param1='{}', param2={})",
-                function ? function : "", param1 ? param1 : "", param2);
+            GetLogger()("OnNWNXGetInt(function='{}', param1='{}', param2={}) caller=0x{:08X}",
+                function ? function : "", param1 ? param1 : "", param2, _host.GetCallingObject());
+
+            // Two reserved names report this plugin's own callback counters. A script can read one
+            // either side of a call to prove the callback actually reached the plugin - which
+            // StoreCampaignObject's return value cannot show, since the engine answers it the same
+            // way when no loader is attached.
+            if (function && std::strcmp(function, "__stat_setbinary") == 0)
+            {
+                outValue = _setBinaryCalls;
+                return true;
+            }
+
+            if (function && std::strcmp(function, "__stat_getbinary") == 0)
+            {
+                outValue = _getBinaryCalls;
+                return true;
+            }
 
             auto it = _ints.find(MakeKey(function, param1, param2));
             if (it == _ints.end())
@@ -203,6 +221,8 @@ namespace
         }
     private:
         nwn2::PluginHost _host;
+        int _setBinaryCalls = 0;
+        int _getBinaryCalls = 0;
         std::unordered_map<std::string, std::vector<uint8_t>> _binaryData;
         std::unordered_map<std::string, std::string> _strings;
         std::unordered_map<std::string, int> _ints;
