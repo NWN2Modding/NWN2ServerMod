@@ -12,13 +12,14 @@ A Windows mod loader for Neverwinter Nights 2: Enhanced Edition's dedicated serv
 
 ## Building
 
-Open `NWN2ServerMod.slnx` in Visual Studio and build the `x64`/`Release` configuration, or from a Developer Command Prompt:
+Open the repository folder in Visual Studio and build the `clang-cl-release` configuration (or `msvc-release` for MSVC), or from a Developer Command Prompt:
 
 ```
-msbuild NWN2ServerMod.slnx /p:Configuration=Release /p:Platform=x64
+cmake --preset clang-cl
+cmake --build --preset clang-cl-release
 ```
 
-Output binaries land in `bin\x64\Release\`.
+Output binaries land in `build\clang-cl\bin\Release\`.
 
 ## Running
 
@@ -178,7 +179,7 @@ The other arguments (`sVarName`, `sFunction`/`sParam1`/`nParam2`) are opaque, pl
 NWNXSetString("Sample", "RunScript", "", 0, "myscript");
 ```
 
-`src/SamplePlugin/` is a complete, minimal reference implementation (ID `"Sample"`) that backs every callback with an in-memory map and logs each call it receives to a `.log` file next to `SamplePlugin.dll`. It builds as part of the solution alongside the other projects.
+`src/SamplePlugin/` is a complete, minimal reference implementation (ID `"Sample"`) that backs every callback with an in-memory map and logs each call it receives to a `.log` file next to `SamplePlugin.dll`. It builds as part of the CMake project alongside the other targets.
 
 # Contributing
 
