@@ -58,6 +58,85 @@ std::expected<std::vector<int>, std::string> PEPattern::ParseSignature(std::stri
     return bytes;
 }
 
+std::expected<void*, std::string> PEPattern::FindPatternUnique(std::wstring_view moduleName, std::string_view pattern)
+{
+    HMODULE hModule = GetModuleHandleW(std::wstring(moduleName).c_str());
+    if (!hModule)
+    {
+        auto error = ::GetLastError();
+
+        return std::unexpected(std::format("GetModuleHandleW failed: 0x{:08X}", error));
+    }
+
+    MODULEINFO moduleInfo;
+    if (!GetModuleInformation(GetCurrentProcess(), hModule, &moduleInfo, sizeof(moduleInfo)))
+    {
+        auto error = ::GetLastError();
+
+        return std::unexpected(std::format("GetModuleInformation failed: 0x{:08X}", error));
+    }
+
+    auto patternResult = ParseSignature(pattern);
+    if (!patternResult)
+    {
+        return std::unexpected(std::format("Failed to parse byte pattern: {}", patternResult.error()));
+    }
+
+    uint8_t* baseAddress = reinterpret_cast<uint8_t*>(moduleInfo.lpBaseOfDll);
+    DWORD moduleSize = moduleInfo.SizeOfImage;
+    auto& patternBytes = patternResult.value();
+    auto patternSize = patternBytes.size();
+
+    // Scan through the module memory. Unlike FindPattern this does not stop at the first hit,
+    // because finding a second one is the whole point.
+    void* first = nullptr;
+    void* second = nullptr;
+    size_t matches = 0;
+
+    for (DWORD i = 0; i < moduleSize - patternSize; ++i)
+    {
+        bool found = true;
+        for (size_t j = 0; j < patternSize; ++j)
+        {
+            if (patternBytes[j] != -1 && baseAddress[i + j] != patternBytes[j])
+            {
+                found = false;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            continue;
+        }
+
+        ++matches;
+        if (matches == 1)
+        {
+            first = &baseAddress[i];
+        }
+        else
+        {
+            second = &baseAddress[i];
+            break;
+        }
+    }
+
+    if (matches == 0)
+    {
+        return std::unexpected("signature not found");
+    }
+
+    if (matches > 1)
+    {
+        return std::unexpected(std::format(
+            "signature is ambiguous - matched at 0x{:016X} and 0x{:016X}; lengthen it until it is unique",
+            (uint64_t)first, (uint64_t)second));
+    }
+
+    return first;
+}
+
 std::expected<void*, std::string> PEPattern::FindPattern(std::wstring_view moduleName, std::string_view pattern)
 {
     HMODULE hModule = GetModuleHandleW(std::wstring(moduleName).c_str());

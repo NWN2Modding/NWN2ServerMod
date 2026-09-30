@@ -2,6 +2,7 @@
 #include "PEPattern.h"
 #include <detours.h>
 #include <cstring>
+#include <iterator>
 #include <cstdlib>
 #include <new>
 #include "Commands.h"
@@ -61,96 +62,153 @@ std::expected<void, uint32_t> NWN2Mod::Initialize(std::wstring_view configPath)
 }
 std::expected<void, std::string> NWN2Mod::DoHooks()
 {
-    auto initCommands = FindInitializeCommands();
-    if (!initCommands)
+    struct Signature
     {
-        return std::unexpected(std::format("Failed to find InitializeCommands: {}", initCommands.error()));
+        const char *name;
+        const char *pattern;
+        void **target;
+    };
+
+    Signature signatures[] = {
+    // This pattern matches this opcode pattern here:
+    // 1407530f9 48 89 10        MOV        qword ptr [RAX],RDX
+    // 1407530fc 48 89 50 08     MOV        qword ptr[RAX + 0x8], RDX
+    // 140753100 49 8d 50 18     LEA        RDX, [R8 + 0x18]
+    // 140753104 48 8b 02        MOV        RAX, qword ptr[RDX]
+    // 140753107 48 8d 0d        LEA        this, [CNWVirtualMachineCommands::ExecuteComman
+    // 22 7a 00 00
+    // 14075310e 48 89 08        MOV        qword ptr[RAX], this = > CNWVirtualMachineCommand
+    // 140753111 48 8b 02        MOV        RAX, qword ptr[RDX]
+    // 140753114 48 8d 0d        LEA        this, [CNWVirtualMachineCommands::ExecuteComman
+    // a5 7a 00 00
+    // 14075311b 48 89 48 08     MOV        qword ptr[RAX + 0x8], this = > CNWVirtualMachineC
+    // The idea is, this is a unique area of code where the entire m_pVirtualMachineCommands array is initialized. Finding this location
+    // gives us access to ALOT of the virtual machine and functions in the NWN2Server64.exe. For one, the table is a pointer to every
+    // script function that can be called, but it only gets initialized programmatically after the server is running.
+    // This entire section of code has the function pointers, so we COULD read them all here, but that would be a lot of iterating for
+    // little gain. Better to save it's pointer.
+    // This sig is for the START of the function.
+    { "InitializeCommands", "48 89 5C 24 20 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC B0 00 00 00 48 8B C1 33 C9 88 48 10 88 0D ?? ?? ?? ?? 88 0D ?? ?? ?? ??",
+        (void**)&_InitializeCommands },
+
+    // This is the byte pattern for the beginning of the CServerExoAppInternal::InitializeNetLayer. This is called
+    // right after the InitializeCommands. So this is a safe place to read the m_pVirtualMachineCommands member with all the
+    // functions in it.
+    { "InitializeNetLayer", "48 89 5C 24 20 88 54 24 10 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC 00 01 00 00 33 C0 48 89 45 8F 89 45 97 41 B8 F9 01 00 00 48 8D 15 ?? ?? ?? ??",
+        (void**)&_InitializeNetLayer },
+
+    // This is the byte pattern for the beginning of the CCampaignDB::SetBinaryData. This is hooked so we can store
+    // binary objects how we see fit and restore them.
+    { "SetBinaryData", "48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 55 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 4D 8B E1 49 8B F8 48 8B F2 4C 8B E9 48 8D 4D ?? E8 ?? ?? ?? ??",
+        (void**)&_SetBinaryData },
+
+    // This is the byte pattern for the beginning of CCampaignDB::GetBinaryData. This is hooked so we can
+    // observe (and eventually intercept) binary campaign object retrieval, the counterpart to SetBinaryData.
+    //
+    // This is the function's prologue (identical, aside from the wildcarded bytes noted below,
+    // between the reference build and the current build):
+    // 48 89 5C 24 10        MOV    [RSP+0x10], RBX
+    // 4C 89 4C 24 20        MOV    [RSP+0x20], R9
+    // 55                    PUSH   RBP
+    // 56                    PUSH   RSI
+    // 57                    PUSH   RDI
+    // 41 54                 PUSH   R12
+    // 41 55                 PUSH   R13
+    // 41 56                 PUSH   R14
+    // 41 57                 PUSH   R15
+    // 48 8D 6C 24 90        LEA    RBP, [RSP-0x70]      (offset wildcarded)
+    // 48 81 EC 70 01 00 00  SUB    RSP, 0x170            (immediate wildcarded)
+    // 0F 29 B4 24 60 01 00 00  MOVAPS [RSP+0x160], XMM6  (offset wildcarded)
+    // 4D 8B F9              MOV    R15, R9
+    // 4D 8B E0              MOV    R12, R8
+    // 4C 8B F2              MOV    R14, RDX
+    // 48 8B F9              MOV    RDI, RCX
+    // 49 8B D0              MOV    RDX, R8
+    // 48 8D 4D A8           LEA    RCX, [RBP-0x58]       (offset wildcarded)
+    // E8 ?? ?? ?? ??        CALL   CExoString copy ctor  (displacement wildcarded, target differs per build)
+    //
+    // The register shuffle (R15/R12/R14/RDI/RDX) is the parameter marshalling for the
+    // (this, retval-shared_ptr, CExoString*, CExoString*, CExoString*) signature and is kept fixed since
+    // it reflects the calling convention, not compiler-specific frame layout.
+    { "GetBinaryData", "48 89 5C 24 10 4C 89 4C 24 20 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 0F 29 B4 24 ?? ?? ?? ?? 4D 8B F9 4D 8B E0 4C 8B F2 48 8B F9 49 8B D0 48 8D 4D ?? E8 ?? ?? ?? ??",
+        (void**)&_GetBinaryData },
+
+    // This is the byte pattern for CVirtualMachine::RunScript(CExoString*, unsigned long, int,
+    // PARAMTER_VALIDATION) - the 4-argument convenience overload that always runs against the
+    // global g_pVirtualMachine (rather than a caller-supplied CVirtualMachine*, and with no extra
+    // script parameters). It is a thin wrapper that just forwards to the real worker function:
+    //
+    // 48 83 EC 48              SUB    RSP,0x48
+    // 33 C0                    XOR    EAX,EAX
+    // 48 89 44 24 38           MOV    [RSP+0x38],RAX      ; zero the temp (empty) parameter array
+    // 48 89 44 24 30           MOV    [RSP+0x30],RAX
+    // 8B 44 24 70              MOV    EAX,[RSP+0x70]      ; reload this function's own 5th (stack) arg
+    // 89 44 24 28              MOV    [RSP+0x28],EAX      ; ...onto the worker's 5th arg slot
+    // 44 89 4C 24 20           MOV    [RSP+0x20],R9D      ; this function's own 4th arg (register)...
+    // 4C 8D 4C 24 30           LEA    R9,[RSP+0x30]       ; ...goes to the worker's 4th arg slot, so R9 is now free to hold &tempArray
+    // 48 8B 0D ?? ?? ?? ??     MOV    RCX,[g_pVirtualMachine]  (RIP-relative; displacement wildcarded, shifts between builds)
+    // E8 ?? ?? ?? ??           CALL   RunScript worker         (displacement wildcarded, target differs per build)
+    //
+    // The function's first parameter is a dead "this" slot: it's clobbered by the MOV RCX,
+    // [g_pVirtualMachine] above before ever being read, which is how a plain, non-member call
+    // into it is possible at all.
+    { "RunScript", "48 83 EC 48 33 C0 48 89 44 24 38 48 89 44 24 30 8B 44 24 70 89 44 24 28 44 89 4C 24 20 4C 8D 4C 24 30 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 90 48 83 C4 48 C3",
+        (void**)&_RunScript },
+
+    // This is the byte pattern for the beginning of CNWSMessage::SendServerToPlayerChatMessage -
+    // the dispatcher player chat (Talk/Shout/Whisper/Tell/Party and their DM variants) and server
+    // tells go through on their way to clients, which is what makes it the place to intercept chat
+    // for the host API's RegisterChatHook.
+    //
+    // 48 8B C4                 MOV    RAX,RSP
+    // 48 89 58 18              MOV    [RAX+0x18],RBX
+    // 88 50 10                 MOV    byte ptr [RAX+0x10],DL    ; nChatMessageType (2nd arg)
+    // 48 89 48 08              MOV    [RAX+0x8],RCX             ; this (1st arg)
+    // 55 56 57 41 54 41 55 41 56 41 57   PUSH RBP/RSI/RDI/R12/R13/R14/R15
+    // 48 8D 68 ??              LEA    RBP,[RAX-0x3F]            (offset wildcarded)
+    // 48 81 EC ?? ?? ?? ??     SUB    RSP,0xA0                  (immediate wildcarded)
+    // 0F 29 70 ??              MOVAPS [RAX-0x48],XMM6           (offset wildcarded)
+    // 0F 29 78 ??              MOVAPS [RAX-0x58],XMM7           (offset wildcarded)
+    // 4D 8B E1                 MOV    R12,R9                    ; sSpeakerMessage (4th arg)
+    // 41 8B F0                 MOV    ESI,R8D                   ; oidSpeaker (3rd arg)
+    // 0F B6 DA                 MOVZX  EBX,DL
+    // 4C 8B F9                 MOV    R15,RCX
+    // BF 01 00 00 00           MOV    EDI,0x1
+    // 48 8B 0D ?? ?? ?? ??     MOV    RCX,[g_pAppManager]       (RIP-relative; displacement wildcarded)
+    { "SendServerToPlayerChatMessage", "48 8B C4 48 89 58 18 88 50 10 48 89 48 08 55 56 57 41 54 41 55 41 56 41 57 48 8D 68 ?? 48 81 EC ?? ?? ?? ?? 0F 29 70 ?? 0F 29 78 ?? 4D 8B E1 41 8B F0 0F B6 DA 4C 8B F9 BF 01 00 00 00 48 8B 0D ?? ?? ?? ??",
+        (void**)&_SendServerToPlayerChatMessage },
+    };
+
+    for (size_t i = 0; i < std::size(signatures); ++i)
+    {
+        auto address = PEPattern::FindPatternUnique(L"NWN2Server64.exe", signatures[i].pattern);
+        if (!address)
+        {
+            return std::unexpected(std::format("Failed to find {}: {}", signatures[i].name, address.error()));
+        }
+
+        // Sanity check. Every one of these anchors on a prologue beginning 0x48, a REX.W prefix.
+        uint8_t *pBuffer = (uint8_t *)address.value();
+        if (pBuffer[0] != 0x48)
+        {
+            return std::unexpected(std::format("Found invalid address for {}: 0x{:016X} Data:0x{:02X}", signatures[i].name, (uint64_t)pBuffer, *pBuffer));
+        }
+
+        *signatures[i].target = address.value();
     }
 
-    auto initNet = FindInitializeNetLayer();
-    if (!initNet)
-    {
-        return std::unexpected(std::format("Failed to find InitializeNetLayer: {}", initNet.error()));
-    }
-
+    // g_pVirtualMachine is a global rather than a function, so it needs its own handling.
     auto virtualMachine = FindVirtualMachineWrite();
     if (!virtualMachine)
     {
         return std::unexpected(std::format("Failed to find g_pVirtualMachine: {}", virtualMachine.error()));
     }
 
-    auto setBinaryData = FindSetBinaryData();
-    if (!setBinaryData)
-    {
-        return std::unexpected(std::format("Failed to find SetBinaryData: {}", setBinaryData.error()));
-    }
-
-    auto getBinaryData = FindGetBinaryData();
-    if (!getBinaryData)
-    {
-        return std::unexpected(std::format("Failed to find GetBinaryData: {}", getBinaryData.error()));
-    }
-
-    auto runScript = FindRunScript();
-    if (!runScript)
-    {
-        return std::unexpected(std::format("Failed to find RunScript: {}", runScript.error()));
-    }
-
-    auto sendChat = FindSendServerToPlayerChatMessage();
-    if (!sendChat)
-    {
-        return std::unexpected(std::format("Failed to find SendServerToPlayerChatMessage: {}", sendChat.error()));
-    }
-
-    // Sanity check
-    uint8_t *pBuffer = (uint8_t *)initNet.value();
-    if (pBuffer[0] != 0x48)
-    {
-        return std::unexpected(std::format("Found invalid address for InitializeNetLayer: 0x{:016X} Data:0x{:02X}", (uint64_t)pBuffer, *pBuffer));
-    }
-
-    pBuffer = (uint8_t*)initCommands.value();
-    if (pBuffer[0] != 0x48)
-    {
-        return std::unexpected(std::format("Found invalid address for InitializeCommands: 0x{:016X} Data:0x{:02X}", (uint64_t)pBuffer, *pBuffer));
-    }
-
-    pBuffer = (uint8_t*)setBinaryData.value();
-    if (pBuffer[0] != 0x48)
-    {
-        return std::unexpected(std::format("Found invalid address for SetBinaryData: 0x{:016X} Data:0x{:02X}", (uint64_t)pBuffer, *pBuffer));
-    }
-
-    pBuffer = (uint8_t*)getBinaryData.value();
-    if (pBuffer[0] != 0x48)
-    {
-        return std::unexpected(std::format("Found invalid address for GetBinaryData: 0x{:016X} Data:0x{:02X}", (uint64_t)pBuffer, *pBuffer));
-    }
-
-    pBuffer = (uint8_t*)runScript.value();
-    if (pBuffer[0] != 0x48)
-    {
-        return std::unexpected(std::format("Found invalid address for RunScript: 0x{:016X} Data:0x{:02X}", (uint64_t)pBuffer, *pBuffer));
-    }
-
-    pBuffer = (uint8_t*)sendChat.value();
-    if (pBuffer[0] != 0x48)
-    {
-        return std::unexpected(std::format("Found invalid address for SendServerToPlayerChatMessage: 0x{:016X} Data:0x{:02X}", (uint64_t)pBuffer, *pBuffer));
-    }
     // Should be initialized to 0x0000000000000000
     if (*((uintptr_t*)virtualMachine.value()) != 0x0000000000000000)
     {
         return std::unexpected(std::format("Found invalid address for g_pVirtualMachine: 0x{:016X} Data:0x{:016X}", ((uint64_t)virtualMachine.value()), *((uint64_t*)virtualMachine.value())));
     }
-
-    _InitializeCommands = (InitializeCommandsFunc)initCommands.value();
-    _InitializeNetLayer = (InitializeNetLayerFunc)initNet.value();
-    _SetBinaryData = (SetBinaryDataFunc)setBinaryData.value();
-    _GetBinaryData = (GetBinaryDataFunc)getBinaryData.value();
-    _RunScript = (RunScriptFunc)runScript.value();
-    _SendServerToPlayerChatMessage = (SendServerToPlayerChatMessageFunc)sendChat.value();
 
     _VirtualMachine = virtualMachine.value(); // This is the address of the global. We'll fix it to the value of the global later. It lasts until server shutdown.
 
@@ -496,89 +554,6 @@ DataBlockPtr* __fastcall NWN2Mod::HookGetBinaryData(
     return pRetVal;
 }
 
-std::expected<void*, std::string> NWN2Mod::FindInitializeCommands()
-{
-    // std::string sig = "48 89 10 48 89 50 08 49 8D 50 ?? 48 8B 02 48 8D 0D ?? ?? ?? ?? 48 89 08 48 8B 02 48 8D 0D ?? ?? ?? ?? 48 89 48 08";
-    // This pattern matches this opcode pattern here:
-    // 1407530f9 48 89 10        MOV        qword ptr [RAX],RDX
-    // 1407530fc 48 89 50 08     MOV        qword ptr[RAX + 0x8], RDX
-    // 140753100 49 8d 50 18     LEA        RDX, [R8 + 0x18]
-    // 140753104 48 8b 02        MOV        RAX, qword ptr[RDX]
-    // 140753107 48 8d 0d        LEA        this, [CNWVirtualMachineCommands::ExecuteComman
-    // 22 7a 00 00
-    // 14075310e 48 89 08        MOV        qword ptr[RAX], this = > CNWVirtualMachineCommand
-    // 140753111 48 8b 02        MOV        RAX, qword ptr[RDX]
-    // 140753114 48 8d 0d        LEA        this, [CNWVirtualMachineCommands::ExecuteComman
-    // a5 7a 00 00
-    // 14075311b 48 89 48 08     MOV        qword ptr[RAX + 0x8], this = > CNWVirtualMachineC
-
-    // The idea is, this is a unique area of code where the entire m_pVirtualMachineCommands array is initialized. Finding this location
-    // gives us access to ALOT of the virtual machine and functions in the NWN2Server64.exe. For one, the table is a pointer to every
-    // script function that can be called, but it only gets initialized programmatically after the server is running.
-    // This entire section of code has the function pointers, so we COULD read them all here, but that would be a lot of iterating for
-    // little gain. Better to save it's pointer.
-
-
-    // This sig is for the START of the function.
-    std::string sig = "48 89 5C 24 20 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC B0 00 00 00 48 8B C1 33 C9 88 48 10 88 0D ?? ?? ?? ?? 88 0D ?? ?? ?? ??";
-
-    return PEPattern::FindPattern(L"NWN2Server64.exe", sig);
-}
-
-std::expected<void*, std::string> NWN2Mod::FindInitializeNetLayer()
-{
-    // This is the byte pattern for the beginning of the CServerExoAppInternal::InitializeNetLayer. This is called
-    // right after the InitializeCommands. So this is a safe place to read the m_pVirtualMachineCommands member with all the
-    // functions in it.
-    
-    std::string pattern = "48 89 5C 24 20 88 54 24 10 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC 00 01 00 00 33 C0 48 89 45 8F 89 45 97 41 B8 F9 01 00 00 48 8D 15 ?? ?? ?? ??";
-    return PEPattern::FindPattern(L"NWN2Server64.exe", pattern);
-}
-
-std::expected<void*, std::string> NWN2Mod::FindSetBinaryData()
-{
-    // This is the byte pattern for the beginning of the CCampaignDB::SetBinaryData. This is hooked so we can store
-    // binary objects how we see fit and restore them.
-
-    std::string pattern = "48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 55 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 4D 8B E1 49 8B F8 48 8B F2 4C 8B E9 48 8D 4D ?? E8 ?? ?? ?? ??";
-    return PEPattern::FindPattern(L"NWN2Server64.exe", pattern);
-}
-
-std::expected<void*, std::string> NWN2Mod::FindGetBinaryData()
-{
-    // This is the byte pattern for the beginning of CCampaignDB::GetBinaryData. This is hooked so we can
-    // observe (and eventually intercept) binary campaign object retrieval, the counterpart to SetBinaryData.
-    //
-    // This is the function's prologue (identical, aside from the wildcarded bytes noted below,
-    // between the reference build and the current build):
-    // 48 89 5C 24 10        MOV    [RSP+0x10], RBX
-    // 4C 89 4C 24 20        MOV    [RSP+0x20], R9
-    // 55                    PUSH   RBP
-    // 56                    PUSH   RSI
-    // 57                    PUSH   RDI
-    // 41 54                 PUSH   R12
-    // 41 55                 PUSH   R13
-    // 41 56                 PUSH   R14
-    // 41 57                 PUSH   R15
-    // 48 8D 6C 24 90        LEA    RBP, [RSP-0x70]      (offset wildcarded)
-    // 48 81 EC 70 01 00 00  SUB    RSP, 0x170            (immediate wildcarded)
-    // 0F 29 B4 24 60 01 00 00  MOVAPS [RSP+0x160], XMM6  (offset wildcarded)
-    // 4D 8B F9              MOV    R15, R9
-    // 4D 8B E0              MOV    R12, R8
-    // 4C 8B F2              MOV    R14, RDX
-    // 48 8B F9              MOV    RDI, RCX
-    // 49 8B D0              MOV    RDX, R8
-    // 48 8D 4D A8           LEA    RCX, [RBP-0x58]       (offset wildcarded)
-    // E8 ?? ?? ?? ??        CALL   CExoString copy ctor  (displacement wildcarded, target differs per build)
-    //
-    // The register shuffle (R15/R12/R14/RDI/RDX) is the parameter marshalling for the
-    // (this, retval-shared_ptr, CExoString*, CExoString*, CExoString*) signature and is kept fixed since
-    // it reflects the calling convention, not compiler-specific frame layout.
-    std::string pattern = "48 89 5C 24 10 4C 89 4C 24 20 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 0F 29 B4 24 ?? ?? ?? ?? 4D 8B F9 4D 8B E0 4C 8B F2 48 8B F9 49 8B D0 48 8D 4D ?? E8 ?? ?? ?? ??";
-    return PEPattern::FindPattern(L"NWN2Server64.exe", pattern);
-}
-
-
 std::expected<void*, std::string> NWN2Mod::FindVirtualMachineWrite()
 {
     // This is the byte pattern for the section of StartServices that writes the g_pVirtualMachine global. The pattern
@@ -619,31 +594,6 @@ std::expected<void*, std::string> NWN2Mod::FindVirtualMachineWrite()
     auto absoluteAddress = ExtractRipRelativeAddress((uintptr_t)(anchor + storeOffset), 0, 3, STORE_LENGTH);
 
     return (void *)absoluteAddress;
-}
-
-std::expected<void*, std::string> NWN2Mod::FindRunScript()
-{
-    // This is the byte pattern for CVirtualMachine::RunScript(CExoString*, unsigned long, int,
-    // PARAMTER_VALIDATION) - the 4-argument convenience overload that always runs against the
-    // global g_pVirtualMachine (rather than a caller-supplied CVirtualMachine*, and with no extra
-    // script parameters). It is a thin wrapper that just forwards to the real worker function:
-    //
-    // 48 83 EC 48              SUB    RSP,0x48
-    // 33 C0                    XOR    EAX,EAX
-    // 48 89 44 24 38           MOV    [RSP+0x38],RAX      ; zero the temp (empty) parameter array
-    // 48 89 44 24 30           MOV    [RSP+0x30],RAX
-    // 8B 44 24 70              MOV    EAX,[RSP+0x70]      ; reload this function's own 5th (stack) arg
-    // 89 44 24 28              MOV    [RSP+0x28],EAX      ; ...onto the worker's 5th arg slot
-    // 44 89 4C 24 20           MOV    [RSP+0x20],R9D      ; this function's own 4th arg (register)...
-    // 4C 8D 4C 24 30           LEA    R9,[RSP+0x30]       ; ...goes to the worker's 4th arg slot, so R9 is now free to hold &tempArray
-    // 48 8B 0D ?? ?? ?? ??     MOV    RCX,[g_pVirtualMachine]  (RIP-relative; displacement wildcarded, shifts between builds)
-    // E8 ?? ?? ?? ??           CALL   RunScript worker         (displacement wildcarded, target differs per build)
-    //
-    // The function's first parameter is a dead "this" slot: it's clobbered by the MOV RCX,
-    // [g_pVirtualMachine] above before ever being read, which is how a plain, non-member call
-    // into it is possible at all.
-    std::string pattern = "48 83 EC 48 33 C0 48 89 44 24 38 48 89 44 24 30 8B 44 24 70 89 44 24 28 44 89 4C 24 20 4C 8D 4C 24 30 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 90 48 83 C4 48 C3";
-    return PEPattern::FindPattern(L"NWN2Server64.exe", pattern);
 }
 
 uintptr_t  NWN2Mod::ExtractRipRelativeAddress(uintptr_t functionAddress,
@@ -811,28 +761,3 @@ int __fastcall NWN2Mod::HookSendServerToPlayerChatMessage(
         nTellPlayerId, pPlayerList, extraMessage, bTriggerEvent);
 }
 
-std::expected<void*, std::string> NWN2Mod::FindSendServerToPlayerChatMessage()
-{
-    // This is the byte pattern for the beginning of CNWSMessage::SendServerToPlayerChatMessage -
-    // the dispatcher player chat (Talk/Shout/Whisper/Tell/Party and their DM variants) and server
-    // tells go through on their way to clients, which is what makes it the place to intercept chat
-    // for the host API's RegisterChatHook.
-    //
-    // 48 8B C4                 MOV    RAX,RSP
-    // 48 89 58 18              MOV    [RAX+0x18],RBX
-    // 88 50 10                 MOV    byte ptr [RAX+0x10],DL    ; nChatMessageType (2nd arg)
-    // 48 89 48 08              MOV    [RAX+0x8],RCX             ; this (1st arg)
-    // 55 56 57 41 54 41 55 41 56 41 57   PUSH RBP/RSI/RDI/R12/R13/R14/R15
-    // 48 8D 68 ??              LEA    RBP,[RAX-0x3F]            (offset wildcarded)
-    // 48 81 EC ?? ?? ?? ??     SUB    RSP,0xA0                  (immediate wildcarded)
-    // 0F 29 70 ??              MOVAPS [RAX-0x48],XMM6           (offset wildcarded)
-    // 0F 29 78 ??              MOVAPS [RAX-0x58],XMM7           (offset wildcarded)
-    // 4D 8B E1                 MOV    R12,R9                    ; sSpeakerMessage (4th arg)
-    // 41 8B F0                 MOV    ESI,R8D                   ; oidSpeaker (3rd arg)
-    // 0F B6 DA                 MOVZX  EBX,DL
-    // 4C 8B F9                 MOV    R15,RCX
-    // BF 01 00 00 00           MOV    EDI,0x1
-    // 48 8B 0D ?? ?? ?? ??     MOV    RCX,[g_pAppManager]       (RIP-relative; displacement wildcarded)
-    std::string pattern = "48 8B C4 48 89 58 18 88 50 10 48 89 48 08 55 56 57 41 54 41 55 41 56 41 57 48 8D 68 ?? 48 81 EC ?? ?? ?? ?? 0F 29 70 ?? 0F 29 78 ?? 4D 8B E1 41 8B F0 0F B6 DA 4C 8B F9 BF 01 00 00 00 48 8B 0D ?? ?? ?? ??";
-    return PEPattern::FindPattern(L"NWN2Server64.exe", pattern);
-}
