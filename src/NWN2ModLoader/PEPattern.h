@@ -22,6 +22,17 @@ public:
     /// <returns>The address of the first match, or an error message if none was found.</returns>
     static std::expected<void*, std::string> FindPattern(std::wstring_view moduleName, std::string_view pattern);
 
+    /// <summary>Searches a module's memory image for the one and only match of a byte pattern.</summary>
+    /// <remarks>
+    /// Fails if the pattern matches more than once. An ambiguous signature is a defect in the
+    /// signature, and quietly taking the first match is how a hook ends up attached to the wrong
+    /// function - a failure that surfaces much later and nowhere near its cause.
+    /// </remarks>
+    /// <param name="moduleName">The module name to search, e.g. <c>L"NWN2Server64.exe"</c>.</param>
+    /// <param name="pattern">An IDA-style hex pattern, with <c>??</c> as a wildcard byte.</param>
+    /// <returns>The address of the single match, or an error message if there were none or several.</returns>
+    static std::expected<void*, std::string> FindPatternUnique(std::wstring_view moduleName, std::string_view pattern);
+
     /// <summary>Searches a bounded range of a module's memory image for the first match of a byte pattern.</summary>
     /// <param name="moduleName">The module name to search, e.g. <c>L"NWN2Server64.exe"</c>.</param>
     /// <param name="offset">The offset from the module base to start searching at.</param>

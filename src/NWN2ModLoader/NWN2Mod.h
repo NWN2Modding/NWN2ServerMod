@@ -228,26 +228,8 @@ private:
     /// Finds every hook target, checks the bytes it matched, and attaches all the Detours.
     std::expected<void, std::string> DoHooks();
 
-    /// Finds CNWVirtualMachineCommands' command-table initializer by byte pattern.
-    std::expected<void*, std::string> FindInitializeCommands();
-
-    /// Finds CServerExoAppInternal::InitializeNetLayer by byte pattern.
-    std::expected<void*, std::string> FindInitializeNetLayer();
-
-    /// Finds CCampaignDB::SetBinaryData by byte pattern.
-    std::expected<void*, std::string> FindSetBinaryData();
-
-    /// Finds CCampaignDB::GetBinaryData by byte pattern.
-    std::expected<void*, std::string> FindGetBinaryData();
-
-    /// Finds CNWSMessage::SendServerToPlayerChatMessage by byte pattern.
-    std::expected<void*, std::string> FindSendServerToPlayerChatMessage();
-
     /// Finds the instruction that writes the g_pVirtualMachine global, by byte pattern.
     std::expected<void*, std::string> FindVirtualMachineWrite();
-
-    /// Finds the CVirtualMachine::RunScript convenience overload by byte pattern.
-    std::expected<void*, std::string> FindRunScript();
 
     /// Runs once the command table is initialized: maps the NWNX functions and fixes up
     /// _VirtualMachine.
