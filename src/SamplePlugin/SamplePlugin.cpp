@@ -164,10 +164,15 @@ namespace
 
             // One function name does something instead of just storing, to show what the stored host
             // API is for: NWNXSetString("Sample", "RunScript", "", 0, "myscript") runs myscript.
+            //
+            // The object passed here becomes OBJECT_SELF inside that script. Handing it the
+            // calling object makes the script run as whoever asked for it, which is what a real
+            // plugin wants - and demonstrates the parameter, which passing OBJECT_INVALID did not.
             if (function && std::strcmp(function, "RunScript") == 0)
             {
-                NWN2Result ran = _host.RunScript(value, NWN2_OBJECT_INVALID);
-                GetLogger()("RunScript('{}') -> {}", value ? value : "",
+                uint32_t runAs = _host.GetCallingObject();
+                NWN2Result ran = _host.RunScript(value, runAs);
+                GetLogger()("RunScript('{}') as 0x{:08X} -> {}", value ? value : "", runAs,
                     nwn2::Succeeded(ran) ? "ok" : (ran.message ? ran.message : "failed"));
                 return;
             }
