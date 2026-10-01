@@ -140,6 +140,24 @@ typedef struct NWN2StringSink {
     void  (NWN2_CALL *Clear)(void* self);
 } NWN2StringSink;
 
+/* ---- Loader services, reached through QueryService ---------------------- */
+
+/* Locating engine functions and globals. A plugin supplies its own byte pattern; the loader
+   supplies the scanner, so a plugin does not carry its own. Patterns work across the GOG and
+   Steam builds, which is why this hands back an address rather than taking one. */
+typedef struct NWN2AddressService {
+    uint32_t structSize;
+    void* self;
+
+    /* The one place a pattern matches in NWN2Server64.exe, or NULL if it matches nowhere or more
+       than once - outError says which, and may be NULL if the caller does not care. */
+    void* (NWN2_CALL* FindUnique)(void* self, const char* pattern, NWN2Result* outError);
+
+#ifdef __cplusplus
+    static constexpr const char* kName = "IAddressService/1";
+#endif
+} NWN2AddressService;
+
 /* ---- The plugin, called by the loader ----------------------------------- */
 
 /* Any entry may be NULL, which means the plugin does not handle that call. */

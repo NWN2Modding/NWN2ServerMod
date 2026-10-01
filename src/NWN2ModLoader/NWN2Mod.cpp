@@ -725,12 +725,43 @@ NWN2ChatHookFunc NWN2_CALL NWN2Mod::HostRegisterChatHook(void* self, NWN2ChatHoo
     return static_cast<NWN2Mod*>(self)->RegisterChatHook(hook);
 }
 
-void* NWN2_CALL NWN2Mod::HostQueryService(void*, const char* versionedName) noexcept
+void* NWN2_CALL NWN2Mod::HostQueryService(void* self, const char* versionedName) noexcept
 {
-    // Nothing to hand out yet. A plugin is expected to cope with a null and carry on without.
+    if (versionedName && std::strcmp(versionedName, NWN2AddressService::kName) == 0)
+    {
+        return &static_cast<NWN2Mod*>(self)->_AddressService;
+    }
+
     NWN2Mod::Log("QueryService: this loader has no service named '{}'.", versionedName ? versionedName : "");
 
     return nullptr;
+}
+
+void* NWN2_CALL NWN2Mod::AddressFindUnique(void*, const char* pattern, NWN2Result* outError) noexcept
+{
+    if (!pattern || !*pattern)
+    {
+        if (outError) { *outError = NWN2Result{ NWN2_E_BAD_ARGUMENT, "no pattern was given" }; }
+
+        return nullptr;
+    }
+
+    auto result = PEPattern::FindPatternUnique(L"NWN2Server64.exe", pattern);
+    if (!result)
+    {
+        // The ABI says a message is owned by the callee and valid until its next call, so the
+        // last one is kept alive here rather than handed back as a dangling temporary.
+        static std::string lastError;
+        lastError = result.error();
+
+        if (outError) { *outError = NWN2Result{ NWN2_E_NOT_FOUND, lastError.c_str() }; }
+
+        return nullptr;
+    }
+
+    if (outError) { *outError = NWN2Result{ 0, nullptr }; }
+
+    return result.value();
 }
 
 uint32_t NWN2_CALL NWN2Mod::HostGetCallingObject(void* self) noexcept
