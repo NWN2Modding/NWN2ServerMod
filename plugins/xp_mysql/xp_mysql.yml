@@ -1,0 +1,38 @@
+# The function class that is provided by this plugin
+class: SQL
+
+# MySQL server connection parameters
+# Under Wine, use 127.0.0.1 rather than localhost to force a TCP connection
+server: localhost
+# port: 3306
+user: nwn
+password: nwn
+schema: nwnx
+
+# Default character set
+# This no longer affects stored objects, which are sent as bound parameters
+# rather than escaped into the statement. It still applies to ordinary queries
+# and to GET ESCAPE STRING.
+# default: unset
+# charset: utf8mb4
+
+# Allow one EXEC to run several statements separated by semicolons.
+# NWNX4 had this on always. With it enabled, one injected semicolon in a
+# concatenated query becomes a second statement the server will run.
+# default: false
+multi_statements: false
+
+# Log verbosity
+# Messages from higher levels are always written. E.g. setting to 'info' will
+# also write 'error' and 'warning' messages.
+# Possible values: none, error, warning, info, debug, trace
+#
+# default: info
+log_level: info
+
+# Log file maximum size, before it is automatically rotated
+# Numbers can end with G M K for gigabytes, megabytes or kilobytes
+# 0 disables the log rotation
+#
+# default: 10M
+log_max_file_size: 10M

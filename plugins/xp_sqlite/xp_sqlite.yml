@@ -1,0 +1,40 @@
+# The function class that is provided by this plugin
+class: SQL
+
+# The database file that the SQLite engine stores its data in.
+# The path can be relative to the directory this plugin is in
+# default: sqlite.db
+file: sqlite.db
+
+# PRAGMA journal_mode. Leave unset for SQLite's own default of 'delete'.
+# 'wal' is faster and survives a crash better, but adds two side files and
+# cannot be opened by older SQLite builds.
+# default: unset
+# journal_mode: wal
+
+# PRAGMA synchronous. Leave unset for SQLite's own default of 'full', which is
+# the most durable setting it offers.
+# Do not set this to 'off' on a database you care about.
+# default: unset
+# synchronous: normal
+
+# Wrap the SQL statements inside a BEGIN/COMMIT transaction.
+# This improves performance but nothing is committed until the server shuts down
+# cleanly, so a crash loses every write since it started.
+# default: false
+wrap_transaction: false
+
+# Log verbosity
+# Messages from higher levels are always written. E.g. setting to 'info' will
+# also write 'error' and 'warning' messages.
+# Possible values: none, error, warning, info, debug, trace
+#
+# default: info
+log_level: info
+
+# Log file maximum size, before it is automatically rotated
+# Numbers can end with G M K for gigabytes, megabytes or kilobytes
+# 0 disables the log rotation
+#
+# default: 10M
+log_max_file_size: 10M
