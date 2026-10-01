@@ -84,6 +84,9 @@ public:
         _HostAbi.RegisterChatHook = &HostRegisterChatHook;
         _HostAbi.QueryService = &HostQueryService;
         _HostAbi.GetCallingObject = &HostGetCallingObject;
+        _AddressService.structSize = sizeof(_AddressService);
+        _AddressService.self = this;
+        _AddressService.FindUnique = &AddressFindUnique;
     }
 
     // _HostAbi.self points at this object, so a copy would hand plugins a pointer to the original.
@@ -152,6 +155,7 @@ private:
     static NWN2Result NWN2_CALL HostRunScript(void* self, const char* script, uint32_t objectId) noexcept;
     static NWN2ChatHookFunc NWN2_CALL HostRegisterChatHook(void* self, NWN2ChatHookFunc hook) noexcept;
     static void* NWN2_CALL HostQueryService(void* self, const char* versionedName) noexcept;
+    static void* NWN2_CALL AddressFindUnique(void* self, const char* pattern, NWN2Result* outError) noexcept;
     static uint32_t NWN2_CALL HostGetCallingObject(void* self) noexcept;
 
     /// Writes the NWNX* handlers straight into the game's command table. NWN2Server calls them
@@ -247,4 +251,7 @@ private:
 
     /// The host API struct, filled in once by the constructor.
     NWN2PluginHost _HostAbi{};
+
+    /// The address service handed out by QueryService, filled in once by the constructor.
+    NWN2AddressService _AddressService{};
 };

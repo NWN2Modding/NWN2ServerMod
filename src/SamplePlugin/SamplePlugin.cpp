@@ -88,6 +88,43 @@ namespace
             // Return value would be the previous hook, but since we're just a sample, it'll be
             // ignored for this call. It can allow multiple plugins to hook chat though by chaining calls to previous hook.
             host.RegisterChatHook(&SamplePlugin::OnChat);
+
+            // Demonstrates QueryService: resolve a known engine function from a pattern the
+            // plugin owns, rather than carrying a scanner or a hardcoded address.
+            if (auto* addresses = host.QueryService<NWN2AddressService>())
+            {
+                NWN2Result error{};
+                void* runScript = addresses->FindUnique(addresses->self,
+                    "48 83 EC 48 33 C0 48 89 44 24 38 48 89 44 24 30 8B 44 24 70 89 44 24 28 44 89 4C 24 20 4C 8D 4C 24 30 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 90 48 83 C4 48 C3",
+                    &error);
+
+                GetLogger()("IAddressService: CVirtualMachine::RunScript -> {}",
+                    runScript ? std::format("0x{:016X}", (uintptr_t)runScript)
+                    : (error.message ? error.message : "not found"));
+
+                _addrService = 1;
+                _addrResolved = runScript ? 1 : 0;
+
+                // A pattern that is nowhere in the image must come back empty rather than
+                // pointing at something.
+                NWN2Result missingError{};
+                _addrMissingRejected = addresses->FindUnique(addresses->self,
+                    "DE AD BE EF DE AD BE EF DE AD BE EF DE AD BE EF", &missingError) == nullptr ? 1 : 0;
+                GetLogger()("IAddressService: absent pattern -> {}",
+                    missingError.message ? missingError.message : "(no error reported)");
+
+                // A single REX.W prefix matches most of the image. The whole point of FindUnique
+                // is that this is an error rather than whichever one came first.
+                NWN2Result ambiguousError{};
+                _addrAmbiguousRejected = addresses->FindUnique(addresses->self,
+                    "48", &ambiguousError) == nullptr ? 1 : 0;
+                GetLogger()("IAddressService: ambiguous pattern -> {}",
+                    ambiguousError.message ? ambiguousError.message : "(no error reported)");
+            }
+            else
+            {
+                GetLogger()("IAddressService not offered by this loader.");
+            }
         }
 
         bool OnSetBinaryData(const char* varName, const char* player,
@@ -187,6 +224,32 @@ namespace
                 return true;
             }
 
+            // What IAddressService did at load time, so a script can check it. The service runs
+            // during OnInitialize and cannot be driven from NWScript directly.
+            if (function && std::strcmp(function, "__stat_addr_service") == 0)
+            {
+                outValue = _addrService;
+                return true;
+            }
+
+            if (function && std::strcmp(function, "__stat_addr_resolved") == 0)
+            {
+                outValue = _addrResolved;
+                return true;
+            }
+
+            if (function && std::strcmp(function, "__stat_addr_missing") == 0)
+            {
+                outValue = _addrMissingRejected;
+                return true;
+            }
+
+            if (function && std::strcmp(function, "__stat_addr_ambiguous") == 0)
+            {
+                outValue = _addrAmbiguousRejected;
+                return true;
+            }
+
             auto it = _ints.find(MakeKey(function, param1, param2));
             if (it == _ints.end())
             {
@@ -223,6 +286,10 @@ namespace
         nwn2::PluginHost _host;
         int _setBinaryCalls = 0;
         int _getBinaryCalls = 0;
+        int _addrService = 0;
+        int _addrResolved = 0;
+        int _addrMissingRejected = 0;
+        int _addrAmbiguousRejected = 0;
         std::unordered_map<std::string, std::vector<uint8_t>> _binaryData;
         std::unordered_map<std::string, std::string> _strings;
         std::unordered_map<std::string, int> _ints;
