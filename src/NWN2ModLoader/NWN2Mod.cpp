@@ -676,7 +676,14 @@ bool NWN2Mod::RunScript(const char* script, uint32_t objectId) const
     // it) - it never reads or writes m_nBufferLength, so leaving it at 0 here is safe.
     CExoString scriptName{ const_cast<char*>(script), 0 };
 
-    return _RunScript(nullptr, &scriptName, objectId, 0, 0) != 0;
+    // The fourth argument is the engine's "this objectId is real" flag, not a spare. The 4-arg
+    // RunScript forwards straight to the 5-arg one, passing this through as the flag beside an
+    // empty parameter array - and the engine's own callers set it to 1 when they have an object
+    // and 0 only when they are passing OBJECT_INVALID.
+    //
+    // Passing 0 here meant objectId was ignored and OBJECT_SELF came out as OBJECT_INVALID in
+    // every script a plugin ran.
+    return _RunScript(nullptr, &scriptName, objectId, 1, 0) != 0;
 }
 
 NWN2ChatHookFunc NWN2Mod::RegisterChatHook(NWN2ChatHookFunc hook)
