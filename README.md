@@ -86,6 +86,24 @@ If `true` then logs will additionally output with `OutputDebugString`. Defaults 
 
 If `true` then logs will additionally output to stdout and stderr. Defaults to `true`.
 
+### fast_module_load (optional)
+
+If `true`, the module is hard-linked into the server's working copy instead of being copied into it.
+Defaults to `true`.
+
+On startup the server copies the whole module into its `currentgame` directory - `CURRENTGAME.0` on
+EE. For a directory-mode module of any size that dominates boot time. This is the behaviour of NWNX4's
+`xp_fastboot` folded into the loader, intercepting `CopyFileW` and making a hard link instead, so no
+bytes move.
+
+The destination filter matches a path component of `currentgame` with an optional numeric suffix, so
+both `currentgame` and `CURRENTGAME.0` are recognised. If a future server names it differently again,
+the loader log says so with a sample path rather than silently copying - which is the failure mode this
+went through once during development.
+
+A link that cannot be made - both paths must be on one NTFS volume - falls back to a real copy and is
+reported once. The server always boots; the only question is how long it takes.
+
 ### plugins (optional)
 
 A list of full paths to plugin DLLs to load. Each is loaded once all of NWN2ModLoader's own hooks are attached, in the order listed. If omitted, no plugins are loaded.

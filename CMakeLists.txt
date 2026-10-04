@@ -21,6 +21,9 @@ endif()
 # Matches the .vcxproj files: MultiThreaded / MultiThreadedDebug (/MT, /MTd).
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# clang-cl leaves exceptions off by default, and vendored yaml-cpp throws.
+add_compile_options(/EHsc)
+
 add_compile_definitions(UNICODE _UNICODE)
 
 # Strict settings for OUR code only. Vendored Detours and yaml-cpp predate
