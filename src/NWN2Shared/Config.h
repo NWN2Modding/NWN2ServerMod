@@ -34,6 +34,9 @@ struct Config
     /// <summary>Full paths to plugin DLLs to load, in order. No plugins are loaded if omitted.</summary>
     std::optional<std::vector<std::string>> plugins;
 
+    /// <summary>If <see langword="true"/>, the module is hard-linked into the server's working copy rather than copied into it. Defaults to <see langword="true"/>.</summary>
+    std::optional<bool> fast_module_load;
+
     /// <summary>Parses a config from a YAML string.</summary>
     /// <param name="src">The YAML text.</param>
     /// <returns>The parsed config, or an error message on failure.</returns>
@@ -62,6 +65,7 @@ struct YAML::convert<Config>
         node["debug_log"] = c.debug_log;
         node["std_log"] = c.std_log;
         node["plugins"] = c.plugins;
+        node["fast_module_load"] = c.fast_module_load;
         return node;
     }
 
@@ -87,6 +91,7 @@ struct YAML::convert<Config>
         c.debug_log = node["debug_log"].as<std::optional<bool>>(std::nullopt);
         c.std_log = node["std_log"].as<std::optional<bool>>(std::nullopt);
         c.plugins = node["plugins"].as<std::optional<std::vector<std::string>>>(std::nullopt);
+        c.fast_module_load = node["fast_module_load"].as<std::optional<bool>>(std::nullopt);
         return true;
     }
 };

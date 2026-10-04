@@ -1,6 +1,7 @@
 add_library(NWN2ModLoader SHARED
     CExoString.cpp
     DataBlock.cpp
+    FastModuleLoad.cpp
     Main.cpp
     NWN2Mod.cpp
     PEPattern.cpp

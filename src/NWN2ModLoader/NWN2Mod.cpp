@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <new>
 #include "Commands.h"
+#include "FastModuleLoad.h"
 
 std::unique_ptr<NWN2Mod> NWN2Mod::Current;
 
@@ -25,6 +26,16 @@ std::expected<void, uint32_t> NWN2Mod::Initialize()
         _Config.debug_log.value_or(false));
 
     Log("*** Initializing NWN2 Hooks ***");
+
+    // Before DoHooks: the server copies the module early in startup. A failure here is not fatal.
+    if (_Config.fast_module_load.value_or(true))
+    {
+        nwn2mod::FastModuleLoad::Install(_Logger);
+    }
+    else
+    {
+        Log("fast_module_load is disabled; the server will copy the module into its working copy.");
+    }
 
     auto hooksResult = DoHooks();
     if (!hooksResult)
