@@ -281,7 +281,7 @@ int SQLGetLastInsertedID()
 
 int SQLGetErrno()
 {
-    return NWNXGetInt(SQL_PLUGIN, "GET AFFECTED ROWS", "", 0);
+     return NWNXGetInt(SQL_PLUGIN, "GET ERRNO", "", 0);
 }
 
 string SQLGetErrorMessage()
