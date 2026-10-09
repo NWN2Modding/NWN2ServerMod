@@ -8,24 +8,26 @@ called out below and in a comment at the top of the file.
 
 ## Building
 
-The plugins live outside the loader repository. `NWN2Plugin` is header-only and a plugin links no
-loader library, so a port needs the SDK's include directory and two support translation units and
-nothing else.
+These build separately from the loader - the top-level `CMakeLists.txt` does not include this
+directory, and `plugins/CMakeLists.txt` can be configured on its own. `NWN2Plugin` is header-only
+and a plugin links no loader library, so a port needs the SDK's include directory and two support
+translation units and nothing else.
 
-Point `LOADER_SOURCE` at a NWN2ServerMod checkout's `src` directory, or let it default to a clone
-sitting next to this folder:
+From the repository root:
 
 ```bash
-cmake -S ports -B ports/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
-      -DLOADER_SOURCE="/path/to/NWN2ServerMod/src"
-cmake --build ports/build
+cmake -S plugins -B plugins/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
+cmake --build plugins/build
 ```
+
+`LOADER_SOURCE` defaults to this repository's own `src`. Add
+`-DLOADER_SOURCE="/path/to/another/NWN2ServerMod/src"` to build these against a different checkout.
 
 Run it from an x64 Developer prompt, or the compiler will not be found. Both `C` and `CXX` must be
 the same compiler — SQLite is C, and CMake refuses a build that mixes clang-cl with MSVC.
 
-DLLs land in `ports/build/bin`.
+DLLs land in `plugins/build/bin`.
 
 ## Installing
 
@@ -160,7 +162,7 @@ value containing an embedded null survives. The original's fixed buffer could no
 
 ## nwnx_sql.nss: the one compatibility break
 
-`ports/common/nwnx_sql.nss` is NWNX4's file with two changes, so it diffs cleanly against upstream.
+`plugins/common/nwnx_sql.nss` is NWNX4's file with two changes, so it diffs cleanly against upstream.
 
 The one that matters:
 
@@ -243,11 +245,11 @@ but that validation is still outstanding.
 ### Building
 
 This is the only port with a prerequisite, and it is skipped rather than fatal when absent, so the
-other four still build with no setup:
+other seven still build with no setup:
 
 ```bash
 vcpkg install libmariadb:x64-windows-static
-cmake -S ports -B ports/build -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
+cmake -S plugins -B plugins/build -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
 ```
 
 Or point `-DMARIADB_CONNECTOR_ROOT=<prefix>` at any existing connector. NWNX4 uses the same
