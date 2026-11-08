@@ -6,6 +6,7 @@ add_library(NWN2ModLoader SHARED
     NWN2Mod.cpp
     PEPattern.cpp
     PluginManager.cpp
+    PlayerIdentity.cpp
     VirtualMachineCommands.cpp)
 
 target_link_libraries(NWN2ModLoader PRIVATE

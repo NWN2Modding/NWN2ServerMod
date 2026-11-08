@@ -37,6 +37,9 @@ struct Config
     /// <summary>If <see langword="true"/>, the module is hard-linked into the server's working copy rather than copied into it. Defaults to <see langword="true"/>.</summary>
     std::optional<bool> fast_module_load;
 
+    /// <summary>If <see langword="true"/>, the loader logs each connecting player's platform identity - the platform user id that replaces the pre-EE CD key - and scripts can read it. Defaults to <see langword="true"/>.</summary>
+    std::optional<bool> log_player_identities;
+
     /// <summary>Parses a config from a YAML string.</summary>
     /// <param name="src">The YAML text.</param>
     /// <returns>The parsed config, or an error message on failure.</returns>
@@ -66,6 +69,7 @@ struct YAML::convert<Config>
         node["std_log"] = c.std_log;
         node["plugins"] = c.plugins;
         node["fast_module_load"] = c.fast_module_load;
+        node["log_player_identities"] = c.log_player_identities;
         return node;
     }
 
@@ -92,6 +96,7 @@ struct YAML::convert<Config>
         c.std_log = node["std_log"].as<std::optional<bool>>(std::nullopt);
         c.plugins = node["plugins"].as<std::optional<std::vector<std::string>>>(std::nullopt);
         c.fast_module_load = node["fast_module_load"].as<std::optional<bool>>(std::nullopt);
+        c.log_player_identities = node["log_player_identities"].as<std::optional<bool>>(std::nullopt);
         return true;
     }
 };

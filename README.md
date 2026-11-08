@@ -52,6 +52,7 @@ debug_log: true
 std_log: false
 plugins:
   - C:/SomePath/To/MyPlugin.dll
+log_player_identities: true
 ```
 
 ### server_exe (Required)
@@ -107,6 +108,40 @@ reported once. The server always boots; the only question is how long it takes.
 ### plugins (optional)
 
 A list of full paths to plugin DLLs to load. Each is loaded once all of NWN2ModLoader's own hooks are attached, in the order listed. If omitted, no plugins are loaded.
+
+### log_player_identities (optional)
+
+If `true`, the loader writes one line per connecting player recording the platform identity the
+client transmitted, and scripts can read the platform user id. Defaults to `true`. It only
+observes: vault folders, names and logins are unchanged.
+
+```
+player identity: platform_name='Iowanscott' platform=Steam (83) platform_user_id=76561190000000000
+modern_user_id='...' unique_id='a1b2c3...'
+```
+
+`platform_user_id` is the field worth having. EE replaced the pre-EE login name and CD key with a
+`UserInfo` struct, and only four of its fields cross: the connect packet carries one
+string, parsed back as `"%s.%s.%llu.%c"` - platform name, modern user id, platform user id,
+platform tag. That makes the platform user id the only stable per-account identifier a server
+receives, and the successor to `GetPCPublicCDKey()`. Scripts read it with:
+
+```c
+string sPlatformId = NWNXGetString("NWN2MOD", "PLATFORM_ID", GetPCPlayerName(oPC), 0);
+```
+
+It returns the id as a decimal string, `"0"` for a client that sent none (a legacy client), and `""`
+if no player of that name has connected since the server started. `NWN2MOD` is reserved by the
+loader for this; any other function name passes through to the plugins.
+
+`GetPCPublicCDKey()` itself no longer returns anything. Nothing in the engine calls
+`CNetLayerPlayerInfo::AddCDKey` or `SetCDKey` any more - both are dead code with no callers
+anywhere in the image - so `m_lstKeys` is always empty, `GetNumCDKeys()` is always 0, and
+`ExecuteCommandGetPCPublicCDKey` takes its empty-string branch for every player. **Any script that
+keys accounts, bans or authentication on the public CD key is comparing empty strings on EE.**
+
+The hook is on `UserInfo::EvaluateUniqueNameAndId`, found by a byte pattern that matches exactly
+once. If the lookup fails the loader log says so and nothing else is affected.
 
 ## Plugins
 

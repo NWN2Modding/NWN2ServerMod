@@ -7,6 +7,7 @@
 #include <new>
 #include "Commands.h"
 #include "FastModuleLoad.h"
+#include "PlayerIdentity.h"
 
 std::unique_ptr<NWN2Mod> NWN2Mod::Current;
 
@@ -35,6 +36,12 @@ std::expected<void, uint32_t> NWN2Mod::Initialize()
     else
     {
         Log("fast_module_load is disabled; the server will copy the module into its working copy.");
+    }
+
+    // Only has to be in place before the first player connects, and a failure is not fatal.
+    if (_Config.log_player_identities.value_or(true))
+    {
+        nwn2mod::PlayerIdentity::Install(_Logger);
     }
 
     auto hooksResult = DoHooks();
@@ -362,6 +369,18 @@ const char *__cdecl NWN2Mod::NWNXGetString(const char* plugin, const char* funct
     // static result across calls; its backing buffer just needs to outlive this function, not this specific call.
     static StringSink result;
     result.Clear();
+
+    // The loader answers for its own reserved class before the plugins are consulted, so a
+    // script can read what PlayerIdentity recorded without a plugin in the middle. Query
+    // returns nullptr for any function that is not one of ours, and a plugin is free to claim
+    // the name otherwise.
+    if (plugin && std::strcmp(plugin, "NWN2MOD") == 0)
+    {
+        if (const char* answer = nwn2mod::PlayerIdentity::Query(function, param1))
+        {
+            return answer;
+        }
+    }
 
     NWN2Plugin* target = Current->_PluginManager.FindById(plugin);
     if (NWN2_HAS_FIELD(target, OnNWNXGetString) && target->OnNWNXGetString)
