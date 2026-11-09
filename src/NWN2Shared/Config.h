@@ -40,6 +40,9 @@ struct Config
     /// <summary>If <see langword="true"/>, the loader logs each connecting player's platform identity - the platform user id that replaces the pre-EE CD key - and scripts can read it. Defaults to <see langword="true"/>.</summary>
     std::optional<bool> log_player_identities;
 
+    /// <summary>If <see langword="true"/>, the server checks in with the NWN2 master server so NWNScry and the other server lists show it, like xp_bugfix did. Defaults to <see langword="true"/>.</summary>
+    std::optional<bool> master_server;
+
     /// <summary>Service only: restart the server whenever it exits. Defaults to <see langword="true"/>.</summary>
     std::optional<bool> restart_on_exit;
 
@@ -85,6 +88,7 @@ struct YAML::convert<Config>
         node["plugins"] = c.plugins;
         node["fast_module_load"] = c.fast_module_load;
         node["log_player_identities"] = c.log_player_identities;
+        node["master_server"] = c.master_server;
         node["restart_on_exit"] = c.restart_on_exit;
         node["restart_delay"] = c.restart_delay;
         node["stop_timeout"] = c.stop_timeout;
@@ -117,6 +121,7 @@ struct YAML::convert<Config>
         c.plugins = node["plugins"].as<std::optional<std::vector<std::string>>>(std::nullopt);
         c.fast_module_load = node["fast_module_load"].as<std::optional<bool>>(std::nullopt);
         c.log_player_identities = node["log_player_identities"].as<std::optional<bool>>(std::nullopt);
+        c.master_server = node["master_server"].as<std::optional<bool>>(std::nullopt);
         c.restart_on_exit = node["restart_on_exit"].as<std::optional<bool>>(std::nullopt);
         c.restart_delay = node["restart_delay"].as<std::optional<int>>(std::nullopt);
         c.stop_timeout = node["stop_timeout"].as<std::optional<int>>(std::nullopt);

@@ -77,6 +77,7 @@ std_log: false
 plugins:
   - C:/SomePath/To/MyPlugin.dll
 log_player_identities: true
+master_server: true
 restart_on_exit: true
 restart_delay: 5
 stop_timeout: 180
@@ -171,6 +172,22 @@ keys accounts, bans or authentication on the public CD key is comparing empty st
 
 The hook is on `UserInfo::EvaluateUniqueNameAndId`, found by a byte pattern that matches exactly
 once. If the lookup fails the loader log says so and nothing else is affected.
+
+### master_server (optional)
+
+If `true`, the server checks in with the NWN2 master server (`nwn2.mst.valhallalegends.com`) so
+NWNScry and the other server lists show it. Defaults to `true`; set it to `false` to keep the server
+off the lists.
+
+1.23 servers got this from xp_bugfix, which sent the server's own master server check-in to
+Skywing's master. EE no longer sends that check-in, though it still answers the master's queries.
+The loader sends it instead: the game port, every 5 minutes, from the first UDP port the server
+binds. The master then queries the server directly, so that port has to be reachable from outside,
+which it already is for players.
+
+```
+master_server: game port 5121; checking in with nwn2.mst.valhallalegends.com every 5 minutes.
+```
 
 ### restart_on_exit (optional, service only)
 

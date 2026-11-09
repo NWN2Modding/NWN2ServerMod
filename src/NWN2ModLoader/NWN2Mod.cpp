@@ -7,6 +7,7 @@
 #include <new>
 #include "Commands.h"
 #include "FastModuleLoad.h"
+#include "MasterServer.h"
 #include "PlayerIdentity.h"
 
 namespace
@@ -113,6 +114,12 @@ std::expected<void, uint32_t> NWN2Mod::Initialize()
     if (_Config.log_player_identities.value_or(true))
     {
         nwn2mod::PlayerIdentity::Install(_Logger);
+    }
+
+    // EE doesn't check in with the master server, so NWNScry never sees it. See MasterServer.h.
+    if (_Config.master_server.value_or(true))
+    {
+        nwn2mod::MasterServer::Install(_Logger);
     }
 
     FixPasswordChecks();
