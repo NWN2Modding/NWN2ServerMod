@@ -11,10 +11,24 @@
 class NWN2Server
 {
 public:
+    /// <summary>A server that <see cref="Launch"/> started and resumed.</summary>
+    struct Running
+    {
+        Handle Process;
+        DWORD ProcessId = 0;
+    };
+
     /// <summary>Loads the config at <paramref name="configPath"/> and runs the full launch/inject/resume sequence.</summary>
     /// <param name="configPath">The full path to the config file to load.</param>
     /// <returns>An unexpected error message on failure. Any failure terminates the partially-initialized server.</returns>
     static std::expected<void, std::string> LoadServer(std::wstring configPath);
+
+    /// <summary>Starts, injects and resumes the server, and returns its process so service mode can watch it.</summary>
+    /// <param name="config">The loaded config.</param>
+    /// <param name="configPath">The full path to the config file, passed through to the loader.</param>
+    /// <param name="log">The logger to report progress/errors to.</param>
+    /// <returns>The running server, or an error message. Any failure terminates the partially-initialized server.</returns>
+    static std::expected<Running, std::string> Launch(const Config& config, const std::wstring& configPath, Logger& log);
 
 private:
     /// <summary>Starts the server executable suspended, with the Steam app/game ID environment variables set.</summary>

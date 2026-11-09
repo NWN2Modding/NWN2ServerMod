@@ -35,6 +35,30 @@ The path to the configuration may be optionally provided as a command-line argum
 NWN2ServerMod.exe <config-path>
 ```
 
+## Running as a Windows service
+
+NWN2ServerMod can install itself as a service, as NWNX4 did. The service starts the server, starts it again whenever it exits (a crash, a scheduled restart, a script calling shutdown), and on a service stop shuts it down cleanly before ending it.
+
+Run these from a Command Prompt opened with **Run as administrator**:
+
+```
+NWN2ServerMod.exe -installservice -account <user> [-serviceno N] [config-path]
+NWN2ServerMod.exe -startservice [-serviceno N]
+NWN2ServerMod.exe -stopservice [-serviceno N]
+NWN2ServerMod.exe -uninstallservice [-serviceno N]
+```
+
+- The service is named `NWN2ServerMod-N` (`-serviceno` defaults to 1). Several servers on one machine means several services, each with its own number and config.
+- The config path is stored in the service when it is installed, so install again after moving it.
+- `-account` is required: the Windows account the server normally runs under. The server reads its settings from that account's `Documents\Neverwinter Nights 2` and won't run as LocalSystem, even with `-home`. Windows needs the account's password for a service, so you're asked for it in a sign-in box (never on the command line), and the account is granted "Log on as a service".
+- The service installs as Manual, like NWNX4, so a new install isn't live at the next reboot. Set it to Automatic in `services.msc` once it's tested.
+- If the account's `nwn2player.ini` is missing when the service starts, it logs which account and path, and stops.
+- The service's own log is `server_log` if set, otherwise `NWN2ServerMod-N.log` next to `NWN2ServerMod.exe`.
+
+**Stopping.** With the [xp_srvadmin](plugins/README.md) plugin loaded, a service stop runs its whole shutdown sequence: the shutdown script, every player booted (saved, `OnClientLeave` run), then the server closes itself. Without it, the server's window is closed directly, as NWNX4 did. Either way, the server is ended if it is still running after `stop_timeout`. A Windows shutdown or reboot is handled the same way.
+
+**Restarting.** If the server fails to start, or exits within five minutes of starting, five times in a row, the service stops rather than restarting it forever. The log says why.
+
 ## Configuration Format
 
 The configuration is a YAML file which is described below.
@@ -53,6 +77,11 @@ std_log: false
 plugins:
   - C:/SomePath/To/MyPlugin.dll
 log_player_identities: true
+restart_on_exit: true
+restart_delay: 5
+stop_timeout: 180
+temp_dir: C:/SomePath/To/Temp
+cpu: 2
 ```
 
 ### server_exe (Required)
@@ -142,6 +171,26 @@ keys accounts, bans or authentication on the public CD key is comparing empty st
 
 The hook is on `UserInfo::EvaluateUniqueNameAndId`, found by a byte pattern that matches exactly
 once. If the lookup fails the loader log says so and nothing else is affected.
+
+### restart_on_exit (optional, service only)
+
+If `true`, the service starts the server again whenever it exits. Defaults to `true`. If `false`, the service stops when the server does.
+
+### restart_delay (optional, service only)
+
+Seconds to wait after the server exits before starting it again. Defaults to `5`.
+
+### stop_timeout (optional, service only)
+
+Seconds a service stop waits for the server to shut down cleanly before ending it. Defaults to `180`, enough for xp_srvadmin's shutdown script, boots and drain. It also sets how long Windows waits for the service when the machine shuts down, so reinstall the service after changing it.
+
+### temp_dir (optional)
+
+Sets `TEMP` and `TMP` for the server, which is where it puts `CURRENTGAME` and `LOGS`. A service doesn't get these from a start script. Same as NWNX4's `nwn2temp`.
+
+### cpu (optional)
+
+The CPU cores the server runs on, numbered from 0: one number (`cpu: 2`) or a list (`cpu: [2, 3]`). Applied after the plugins load, on every start and restart, so it wins over a plugin that sets its own.
 
 ## Plugins
 

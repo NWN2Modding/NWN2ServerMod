@@ -95,11 +95,11 @@ Every function is available through either `NWNXSetString` (fire and forget) or 
 
 ### Scheduled restarts
 
-Set up in `xp_srvadmin.yml`, next to the DLL. With `restart: enabled: true`, the server restarts
+Set up in `xp_srvadmin.yml`. With `restart: enabled: true`, the server restarts
 every `every_hours` after startup, broadcasting the configured warnings on the way. At zero:
 
 1. `shutdown_script`, if set, runs on the module with every player still online.
-2. After `shutdown_delay_seconds`, every player is booted from the admin window. A boot is a
+2. After `shutdown_delay_seconds`, every player is booted. A boot is a
    normal disconnect: the character is saved and `OnClientLeave` runs.
 3. Once the player list is empty (or `boot_timeout_seconds` passes), `drain_seconds` later the
    server closes itself.

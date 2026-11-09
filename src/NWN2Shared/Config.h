@@ -40,6 +40,21 @@ struct Config
     /// <summary>If <see langword="true"/>, the loader logs each connecting player's platform identity - the platform user id that replaces the pre-EE CD key - and scripts can read it. Defaults to <see langword="true"/>.</summary>
     std::optional<bool> log_player_identities;
 
+    /// <summary>Service only: restart the server whenever it exits. Defaults to <see langword="true"/>.</summary>
+    std::optional<bool> restart_on_exit;
+
+    /// <summary>Service only: seconds before restarting the server. Defaults to 5.</summary>
+    std::optional<int> restart_delay;
+
+    /// <summary>Service only: seconds a stop waits for a clean shutdown before ending the server. Defaults to 180.</summary>
+    std::optional<int> stop_timeout;
+
+    /// <summary>TEMP and TMP for the server, where it puts CURRENTGAME and LOGS.</summary>
+    std::optional<std::string> temp_dir;
+
+    /// <summary>CPU cores the server runs on, numbered from 0. One number or a list.</summary>
+    std::optional<std::vector<int>> cpu;
+
     /// <summary>Parses a config from a YAML string.</summary>
     /// <param name="src">The YAML text.</param>
     /// <returns>The parsed config, or an error message on failure.</returns>
@@ -70,6 +85,11 @@ struct YAML::convert<Config>
         node["plugins"] = c.plugins;
         node["fast_module_load"] = c.fast_module_load;
         node["log_player_identities"] = c.log_player_identities;
+        node["restart_on_exit"] = c.restart_on_exit;
+        node["restart_delay"] = c.restart_delay;
+        node["stop_timeout"] = c.stop_timeout;
+        node["temp_dir"] = c.temp_dir;
+        node["cpu"] = c.cpu;
         return node;
     }
 
@@ -97,6 +117,18 @@ struct YAML::convert<Config>
         c.plugins = node["plugins"].as<std::optional<std::vector<std::string>>>(std::nullopt);
         c.fast_module_load = node["fast_module_load"].as<std::optional<bool>>(std::nullopt);
         c.log_player_identities = node["log_player_identities"].as<std::optional<bool>>(std::nullopt);
+        c.restart_on_exit = node["restart_on_exit"].as<std::optional<bool>>(std::nullopt);
+        c.restart_delay = node["restart_delay"].as<std::optional<int>>(std::nullopt);
+        c.stop_timeout = node["stop_timeout"].as<std::optional<int>>(std::nullopt);
+        c.temp_dir = node["temp_dir"].as<std::optional<std::string>>(std::nullopt);
+        if (node["cpu"] && node["cpu"].IsScalar())
+        {
+            c.cpu = std::vector<int>{ node["cpu"].as<int>() };
+        }
+        else
+        {
+            c.cpu = node["cpu"].as<std::optional<std::vector<int>>>(std::nullopt);
+        }
         return true;
     }
 };

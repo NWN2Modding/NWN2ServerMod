@@ -9,6 +9,77 @@
 #include "FastModuleLoad.h"
 #include "PlayerIdentity.h"
 
+namespace
+{
+    // EE's password setters and getters only work once the server is up, so the ini passwords
+    // were dropped and the admin window showed "0". Turn each check's je into a jmp.
+    constexpr const char* kPasswordChecks[] = {
+        // SetPlayerPassword, SetGameMasterPassword, SetServerAdminPassword
+        "83 3E 04 74 0C 48 8B C8 E8 ?? ?? ?? ?? 33 DB EB ?? 48 8B D3 48 8D 8E 80 42 00 00",
+        "83 3E 04 74 0C 48 8B C8 E8 ?? ?? ?? ?? 33 DB EB ?? 48 8D 8E 90 42 00 00",
+        "83 3E 04 74 0C 48 8B C8 E8 ?? ?? ?? ?? 33 DB EB ?? 48 8D 8E A0 42 00 00",
+        // GetPlayerPassword, GetGameMasterPassword, GetServerAdminPassword
+        "83 3A 04 74 10 33 D2 E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 30 5B C3 48 81 C2 80 42 00 00",
+        "83 3A 04 74 10 33 D2 E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 30 5B C3 48 81 C2 90 42 00 00",
+        "83 3A 04 74 10 33 D2 E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 30 5B C3 48 81 C2 A0 42 00 00",
+    };
+
+    // How far back from the match each setter starts.
+    constexpr ptrdiff_t kSetterStart[] = { 0x29, 0x2C, 0x2C };
+    constexpr const char* kPasswordNames[] = { "player", "DM", "admin" };
+
+    // CExoString by value, which x64 passes as a pointer.
+    using SetPasswordFunc = int(__fastcall*)(void* netLayer, char** password);
+    SetPasswordFunc g_setPassword[3] = {};
+
+    // The server's "DM Login Enabled" line is wrong now, so log what was set instead.
+    template <int N>
+    int __fastcall SetPasswordHook(void* netLayer, char** password)
+    {
+        bool set = password && *password && **password;
+        NWN2Mod::Log("passwords: {} password {}.", kPasswordNames[N], set ? "set" : "empty");
+        return g_setPassword[N](netLayer, password);
+    }
+
+    const SetPasswordFunc kPasswordHooks[] = { &SetPasswordHook<0>, &SetPasswordHook<1>, &SetPasswordHook<2> };
+
+    void FixPasswordChecks()
+    {
+        int patched = 0;
+        for (int i = 0; i < 6; ++i)
+        {
+            auto found = PEPattern::FindPatternUnique(L"NWN2Server64.exe", kPasswordChecks[i]);
+            if (!found)
+            {
+                NWN2Mod::Log("passwords: pattern not found ({}); skipped.", found.error());
+                continue;
+            }
+
+            auto* je = static_cast<uint8_t*>(*found) + 3;
+            DWORD old;
+            if (*je == 0x74 && ::VirtualProtect(je, 1, PAGE_EXECUTE_READWRITE, &old))
+            {
+                *je = 0xEB;
+                ::VirtualProtect(je, 1, old, &old);
+                ++patched;
+            }
+
+            if (i < 3)
+            {
+                g_setPassword[i] = reinterpret_cast<SetPasswordFunc>(static_cast<uint8_t*>(*found) - kSetterStart[i]);
+                ::DetourTransactionBegin();
+                ::DetourUpdateThread(::GetCurrentThread());
+                ::DetourAttach(&(PVOID&)g_setPassword[i], reinterpret_cast<PVOID>(kPasswordHooks[i]));
+                if (::DetourTransactionCommit() != NO_ERROR)
+                {
+                    g_setPassword[i] = nullptr;
+                }
+            }
+        }
+        NWN2Mod::Log("passwords: {} of 6 checks removed; ini and command-line passwords now apply at startup.", patched);
+    }
+}
+
 std::unique_ptr<NWN2Mod> NWN2Mod::Current;
 
 InitializeNetLayerFunc NWN2Mod::_InitializeNetLayer;
@@ -44,6 +115,8 @@ std::expected<void, uint32_t> NWN2Mod::Initialize()
         nwn2mod::PlayerIdentity::Install(_Logger);
     }
 
+    FixPasswordChecks();
+
     auto hooksResult = DoHooks();
     if (!hooksResult)
     {
@@ -58,6 +131,30 @@ std::expected<void, uint32_t> NWN2Mod::Initialize()
     // Every plugin is loaded by this point, so it's safe for OnInitialize to look up any other
     // plugin regardless of load order.
     _PluginManager.InitializeAll(HostAbi());
+
+    // After the plugins, so this wins over any plugin that sets its own.
+    if (_Config.cpu && !_Config.cpu->empty())
+    {
+        DWORD_PTR mask = 0;
+        for (int core : *_Config.cpu)
+        {
+            if (core >= 0 && core < 64)
+            {
+                mask |= DWORD_PTR(1) << core;
+            }
+        }
+
+        DWORD_PTR processMask = 0, systemMask = 0;
+        ::GetProcessAffinityMask(::GetCurrentProcess(), &processMask, &systemMask);
+        if ((mask & systemMask) != mask || !::SetProcessAffinityMask(::GetCurrentProcess(), mask))
+        {
+            Log("cpu: can't use cores 0x{:X} on this machine (available 0x{:X}); leaving it as is.", mask, systemMask);
+        }
+        else
+        {
+            Log("cpu: cores 0x{:X}.", mask);
+        }
+    }
 
     Log("Initializing complete.");
 

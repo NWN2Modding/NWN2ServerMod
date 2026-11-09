@@ -40,7 +40,39 @@ std::expected<void, std::string> NWN2Server::LoadServer(std::wstring configPath)
         config.std_log.value_or(true),
         config.debug_log.value_or(false));
 
+    auto running = Launch(config, configPath, log);
+    if (!running)
+    {
+        return std::unexpected(running.error());
+    }
+
+    return {};
+}
+
+std::expected<NWN2Server::Running, std::string> NWN2Server::Launch(const Config& config, const std::wstring& configPath, Logger& log)
+{
     log("****** Initializing NWN2ServerMod ******");
+
+    // The loader passes its init address through one fixed shared-memory name, so two servers
+    // starting together (services after a reboot) would collide. Take turns. Abandoned just
+    // means the other launcher died.
+    Handle launchLock = ::CreateMutexW(nullptr, FALSE, L"Local\\NWN2ServerMod.Launch");
+    bool haveLock = false;
+    if (launchLock)
+    {
+        DWORD wait = ::WaitForSingleObject(launchLock, 600000);
+        haveLock = wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
+        if (!haveLock)
+        {
+            log("Another launch held the launch lock for 10 minutes; going ahead anyway.");
+        }
+    }
+    struct LockRelease
+    {
+        HANDLE lock;
+        bool held;
+        ~LockRelease() { if (held) { ::ReleaseMutex(lock); } }
+    } lockRelease{ launchLock, haveLock };
 
     log("Starting Process: {}", config.server_exe);
 
@@ -56,6 +88,17 @@ std::expected<void, std::string> NWN2Server::LoadServer(std::wstring configPath)
         std::filesystem::path exePath(config.server_exe);
 
         workingDir = exePath.parent_path().wstring() + L"\\";
+    }
+
+    // Services don't get TEMP from a start script. The server puts CURRENTGAME and LOGS there.
+    if (config.temp_dir)
+    {
+        std::wstring temp = ::ToWString(*config.temp_dir);
+        std::error_code ec;
+        std::filesystem::create_directories(temp, ec);
+        ::SetEnvironmentVariableW(L"TEMP", temp.c_str());
+        ::SetEnvironmentVariableW(L"TMP", temp.c_str());
+        log("TEMP and TMP: {}", *config.temp_dir);
     }
 
     auto startResult = StartProcess(serverExe, workingDir, ::ToWString(config.server_args));
@@ -103,9 +146,12 @@ std::expected<void, std::string> NWN2Server::LoadServer(std::wstring configPath)
         return std::unexpected(errorMessage);
     }
 
-    log("NWN2Server64 running.");
-    
-    return {};
+    log("NWN2Server64 running (pid {}).", pi.dwProcessId);
+
+    Running running;
+    running.Process = std::move(hProcess);
+    running.ProcessId = pi.dwProcessId;
+    return running;
 }
 
 std::expected<PROCESS_INFORMATION, std::string> NWN2Server::StartProcess(
