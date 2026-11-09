@@ -1,0 +1,26 @@
+# xp_srvadmin. Read once at startup; every key is optional.
+
+# Scheduled restarts. When the time comes, the plugin runs shutdown_script, boots every player
+# (saving them and running OnClientLeave), waits drain_seconds, then closes the server. Starting it
+# again is the NWN2ServerMod service's job.
+restart:
+  enabled: false
+  every_hours: 12              # hours after startup; decimals work (0.25 = 15 minutes)
+  warnings:                    # minutes before the restart
+    - { minutes: 30, message: "[ Server restart will happen in 30 minutes ]" }
+    - { minutes: 15, message: "[ Server restart will happen in 15 minutes ]" }
+    - { minutes: 10, message: "[ Server restart will happen in 10 minutes ]" }
+    - { minutes: 5,  message: "[ Server restart will happen in 5 minutes ]" }
+    - { minutes: 0,  message: "[ Server restart NOW ]" }
+  shutdown_script: ""          # optional module script to run first (saves, cleanup)
+  shutdown_delay_seconds: 10   # after the script, before players are booted
+  boot_timeout_seconds: 60     # longest wait for the player list to empty
+  drain_seconds: 10            # after the last player leaves, before the server closes
+  lock_logins_seconds: 60      # new logins get a temporary player password this long before; 0 = off
+
+# Values for ADMIN_EXTEND and ADMIN_REBOOT. The plugin does not check who calls them, so call them
+# from your own DM or admin command.
+admin_commands:
+  admin_extend: 60             # minutes ADMIN_EXTEND pushes the restart back
+  admin_reboot: 60             # seconds until ADMIN_REBOOT restarts the server
+  admin_message: "The server will shut down in 1 minute."

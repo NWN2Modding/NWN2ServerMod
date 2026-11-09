@@ -90,8 +90,42 @@ Every function is available through either `NWNXSetString` (fire and forget) or 
 | `SETDISABLEOVERRIDE` | `true` / `false` |
 | `SETDISABLECUSTOMGUI` | `true` / `false` |
 | `SHUTDOWNNWN2SERVER` | — |
+| `ADMIN_EXTEND` | — |
+| `ADMIN_REBOOT` | — |
+
+### Scheduled restarts
+
+Set up in `xp_srvadmin.yml`, next to the DLL. With `restart: enabled: true`, the server restarts
+every `every_hours` after startup, broadcasting the configured warnings on the way. At zero:
+
+1. `shutdown_script`, if set, runs on the module with every player still online.
+2. After `shutdown_delay_seconds`, every player is booted from the admin window. A boot is a
+   normal disconnect: the character is saved and `OnClientLeave` runs.
+3. Once the player list is empty (or `boot_timeout_seconds` passes), `drain_seconds` later the
+   server closes itself.
+
+For the last `lock_logins_seconds` (60 by default), the player password is set to a temporary one
+so nobody new joins just to be booted. The real password is put back before the server closes, or
+if the restart is extended.
+
+The plugin only closes the server. Run it under the NWN2ServerMod service to have it started again.
+A service stop runs the same sequence.
+
+`ADMIN_EXTEND` pushes the restart back `admin_extend` minutes. `ADMIN_REBOOT` broadcasts
+`admin_message` and restarts after `admin_reboot` seconds. Neither takes arguments, and the plugin
+doesn't check who calls them, so hook them to your own DM or admin command:
+
+```c
+if (GetIsDM(oPC) && sText == "!extend")
+    NWNXGetInt("SRVADMIN", "ADMIN_EXTEND", "", 0);   // 1 if extended
+if (GetIsDM(oPC) && sText == "!reboot")
+    NWNXGetInt("SRVADMIN", "ADMIN_REBOOT", "", 0);
+```
 
 ### Changes from NWNX4
+
+**`SHUTDOWNNWN2SERVER` posts `WM_CLOSE`**, as NWNX4 did. Clicking the Shutdown button from inside a
+script stopped the server mid-script, and players timed out instead of being disconnected.
 
 **`BANPLAYERCDKEY` is gone.** The 64-bit server's dialog has no Ban CD-Key button, and the control
 that inherited its ID bans by IP instead. Calling it logs an explanation and returns 0 rather than

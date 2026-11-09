@@ -18,6 +18,8 @@
 //     NWNXSetString("SRVADMIN", "SETDISABLEOVERRIDE",     "true"/"false", 0, "");   // new
 //     NWNXSetString("SRVADMIN", "SETDISABLECUSTOMGUI",    "true"/"false", 0, "");   // new
 //     NWNXSetString("SRVADMIN", "SHUTDOWNNWN2SERVER",     "",           0, "");
+//     NWNXSetString("SRVADMIN", "ADMIN_EXTEND",           "",           0, "");    // new
+//     NWNXSetString("SRVADMIN", "ADMIN_REBOOT",           "",           0, "");    // new
 //
 // Every action also answers through NWNXGetInt with the same function name, returning 1 on
 // success and 0 on failure, so a script can tell whether the control was actually found. The
@@ -35,18 +37,27 @@
 //   - Checkboxes are set by reading the current state and clicking only if it differs, rather
 //     than BM_SETCHECK. BM_SETCHECK updates the box without notifying the dialog, so the server
 //     may never apply the setting. Clicking does both.
+//
+// Also adds scheduled restarts, set up in xp_srvadmin.yml.
 #include <Plugin.hpp>
 #include <Logger.h>
 #include <Data.h>
+#include <Yaml.h>
 
 #define VC_EXTRALEAN
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <windowsx.h>
 
+#include <algorithm>
+#include <chrono>
 #include <cstring>
+#include <format>
+#include <random>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <vector>
 
 namespace
 {
@@ -57,7 +68,6 @@ namespace
     constexpr int IDC_ADMINPASSWORD_EDIT   = 0x3FB;
     constexpr int IDC_SENDMESSAGE_EDIT     = 0x3FC;
     constexpr int IDC_PLAYERLIST_LISTBOX   = 0x3FE;
-    constexpr int IDC_SHUTDOWN_BUTTON      = 0x3FF;
     constexpr int IDC_SENDMESSAGE_BUTTON   = 0x400;
     constexpr int IDC_BOOT_BUTTON          = 0x401;
     constexpr int IDC_BANNAME_BUTTON       = 0x402;
@@ -248,22 +258,413 @@ namespace
         return true;
     }
 
+    /// Same as the window's close box. Clicking Shutdown from a script dropped players into a timeout.
     bool Shutdown()
     {
         HWND window = ServerWindow();
         if (!window) { GetLogger()("shutdown: the server's admin window was not found."); return false; }
 
-        HWND button = GetDlgItem(window, IDC_SHUTDOWN_BUTTON);
-        if (!button) { GetLogger()("shutdown: the button is missing."); return false; }
-
         GetLogger()("shutting the server down");
-        SendMessage(button, BM_CLICK, 0, 0);
+        PostMessageW(window, WM_CLOSE, 0, 0);
         return true;
     }
 
     bool IsTrue(const char* value)
     {
         return value && _stricmp(value, "true") == 0;
+    }
+
+    // Scheduled restarts
+
+    struct Warning
+    {
+        int minutes = 0;
+        std::string message;
+    };
+
+    struct Settings
+    {
+        // restart:
+        bool enabled = false;
+        double everyHours = 12.0;
+        std::vector<Warning> warnings;          // largest first
+        std::string shutdownScript;
+        int shutdownDelaySeconds = 10;
+        int bootTimeoutSeconds = 60;
+        int drainSeconds = 10;
+        int lockLoginsSeconds = 60;
+
+        // admin_commands:
+        int adminExtendMinutes = 60;
+        int adminRebootSeconds = 60;
+        std::string adminMessage = "The server will shut down in 1 minute.";
+    };
+
+    /// xp_srvadmin.yml next to the DLL. Every key is optional.
+    Settings LoadSettings()
+    {
+        Settings s;
+        auto path = std::filesystem::path(GetFullModulePath(GetOwnModule())).replace_extension(L".yml");
+        if (!std::filesystem::exists(path))
+        {
+            return s;
+        }
+
+        try
+        {
+            YAML::Node root = YAML::LoadFile(path.string());
+            if (YAML::Node r = root["restart"])
+            {
+                s.enabled              = r["enabled"].as<bool>(s.enabled);
+                s.everyHours           = r["every_hours"].as<double>(s.everyHours);
+                s.shutdownScript       = r["shutdown_script"].as<std::string>(s.shutdownScript);
+                s.shutdownDelaySeconds = r["shutdown_delay_seconds"].as<int>(s.shutdownDelaySeconds);
+                s.bootTimeoutSeconds   = r["boot_timeout_seconds"].as<int>(s.bootTimeoutSeconds);
+                s.drainSeconds         = r["drain_seconds"].as<int>(s.drainSeconds);
+                s.lockLoginsSeconds    = r["lock_logins_seconds"].as<int>(s.lockLoginsSeconds);
+                if (YAML::Node ws = r["warnings"]; ws.IsSequence())
+                {
+                    for (const auto& w : ws)
+                    {
+                        s.warnings.push_back({ w["minutes"].as<int>(0), w["message"].as<std::string>("") });
+                    }
+                }
+            }
+            if (YAML::Node a = root["admin_commands"])
+            {
+                s.adminExtendMinutes = a["admin_extend"].as<int>(s.adminExtendMinutes);
+                s.adminRebootSeconds = a["admin_reboot"].as<int>(s.adminRebootSeconds);
+                s.adminMessage       = a["admin_message"].as<std::string>(s.adminMessage);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            GetLogger()("could not read {}: {}. Scheduled restarts are off.", path.string(), e.what());
+            return Settings{};
+        }
+
+        std::sort(s.warnings.begin(), s.warnings.end(),
+                  [](const Warning& a, const Warning& b) { return a.minutes > b.minutes; });
+        return s;
+    }
+
+    using Clock = std::chrono::steady_clock;
+
+    enum class Phase { Waiting, ScriptDelay, Boot, Drain, Closed };
+
+    // All of this runs on the main thread (window timer and scripts), so no locking.
+    Settings g_settings;
+    nwn2::PluginHost g_host;
+    Phase g_phase = Phase::Waiting;
+    bool g_scheduled = false;
+    Clock::time_point g_target;
+    std::vector<bool> g_warned;
+    Clock::time_point g_phaseStart;
+    Clock::time_point g_lastBoot;
+    const char* g_reason = "scheduled restart";
+    bool g_loginsLocked = false;
+    std::string g_savedPassword;
+
+    constexpr UINT_PTR kTimerId = 0x53A1;
+    constexpr auto kRebootInterval = std::chrono::seconds(10);   // before booting again
+    constexpr uint32_t kModuleObject = 0;                        // the module's object id
+
+    UINT g_msgStart = 0;
+    UINT g_msgStop = 0;
+    WNDPROC g_originalProc = nullptr;
+    HANDLE g_stopEvent = nullptr;
+
+    double SecondsLeft()
+    {
+        return std::chrono::duration<double>(g_target - Clock::now()).count();
+    }
+
+    /// Skip warnings whose time has already passed.
+    void ResetWarnings()
+    {
+        g_warned.assign(g_settings.warnings.size(), false);
+        for (size_t i = 0; i < g_warned.size(); ++i)
+        {
+            g_warned[i] = g_settings.warnings[i].minutes * 60.0 >= SecondsLeft();
+        }
+    }
+
+    /// Temporary player password so nobody new joins right before a restart.
+    void LockLogins()
+    {
+        HWND edit = GetDlgItem(ServerWindow(), IDC_PLAYERPASSWORD_EDIT);
+        if (g_loginsLocked || !edit)
+        {
+            return;
+        }
+
+        char saved[256] = {};
+        GetWindowTextA(edit, saved, sizeof(saved));
+
+        std::random_device random;
+        std::string password = std::format("restart-{:08x}{:08x}", random(), random());
+        if (SetTextField(edit, password.c_str()))
+        {
+            g_savedPassword = saved;
+            g_loginsLocked = true;
+            GetLogger()("logins locked for the restart (temporary player password).");
+        }
+    }
+
+    /// Puts the real password back (on extend, and before closing).
+    void UnlockLogins()
+    {
+        HWND edit = GetDlgItem(ServerWindow(), IDC_PLAYERPASSWORD_EDIT);
+        if (!g_loginsLocked || !edit)
+        {
+            return;
+        }
+
+        SetTextField(edit, g_savedPassword.c_str());
+        g_loginsLocked = false;
+        GetLogger()("logins unlocked; the player password is back as it was.");
+    }
+
+    /// Boots everyone by row. Last row first in case a boot removes its row right away.
+    int BootAll()
+    {
+        HWND window = ServerWindow();
+        HWND list = GetDlgItem(window, IDC_PLAYERLIST_LISTBOX);
+        HWND button = GetDlgItem(window, IDC_BOOT_BUTTON);
+        int count = list ? ListBox_GetCount(list) : 0;
+        if (!button || count <= 0)
+        {
+            return 0;
+        }
+
+        for (int i = count - 1; i >= 0; --i)
+        {
+            ListBox_SetCurSel(list, i);
+            SendMessage(button, BM_CLICK, 0, 0);
+        }
+
+        g_lastBoot = Clock::now();
+        GetLogger()("booting {} player(s).", count);
+        return count;
+    }
+
+    int PlayerCount()
+    {
+        HWND list = GetDlgItem(ServerWindow(), IDC_PLAYERLIST_LISTBOX);
+        return list ? ListBox_GetCount(list) : 0;
+    }
+
+    void BeginShutdown(const char* reason)
+    {
+        if (g_phase != Phase::Waiting)
+        {
+            return;
+        }
+
+        g_reason = reason;
+        GetLogger()("shutdown sequence started ({}).", reason);
+        if (g_settings.lockLoginsSeconds > 0)
+        {
+            LockLogins();
+        }
+
+        if (!g_settings.shutdownScript.empty())
+        {
+            GetLogger()("running shutdown_script '{}'.", g_settings.shutdownScript);
+            auto result = g_host.RunScript(g_settings.shutdownScript.c_str(), kModuleObject);
+            if (!nwn2::Succeeded(result))
+            {
+                GetLogger()("shutdown_script failed: {}", result.message ? result.message : "no detail");
+            }
+        }
+
+        g_phase = Phase::ScriptDelay;
+        g_phaseStart = Clock::now();
+    }
+
+    bool AdminExtend()
+    {
+        if (g_phase != Phase::Waiting || !g_scheduled)
+        {
+            GetLogger()("ADMIN_EXTEND: no restart to extend (none scheduled, or already shutting down).");
+            return false;
+        }
+
+        g_target += std::chrono::minutes(g_settings.adminExtendMinutes);
+        ResetWarnings();
+        GetLogger()("ADMIN_EXTEND: restart moved back {} minutes ({:.0f} minutes from now).",
+                    g_settings.adminExtendMinutes, SecondsLeft() / 60.0);
+        return true;
+    }
+
+    bool AdminReboot()
+    {
+        if (g_phase != Phase::Waiting)
+        {
+            GetLogger()("ADMIN_REBOOT: the shutdown has already begun.");
+            return false;
+        }
+
+        auto target = Clock::now() + std::chrono::seconds(g_settings.adminRebootSeconds);
+        if (!g_scheduled || target < g_target)
+        {
+            g_target = target;
+        }
+        g_scheduled = true;
+        g_reason = "admin reboot";
+        g_warned.assign(g_settings.warnings.size(), true);   // admin_message replaces the countdown
+
+        BroadcastMessage(g_settings.adminMessage.c_str());
+        GetLogger()("ADMIN_REBOOT: restarting in {:.0f} seconds.", SecondsLeft());
+        return true;
+    }
+
+    /// Every 250 ms.
+    void Tick()
+    {
+        auto now = Clock::now();
+
+        switch (g_phase)
+        {
+            case Phase::Waiting:
+            {
+                if (!g_scheduled)
+                {
+                    return;
+                }
+
+                // Only announce the latest if several passed at once.
+                double left = SecondsLeft();
+                const Warning* announce = nullptr;
+                for (size_t i = 0; i < g_warned.size(); ++i)
+                {
+                    if (!g_warned[i] && left <= g_settings.warnings[i].minutes * 60.0)
+                    {
+                        g_warned[i] = true;
+                        announce = &g_settings.warnings[i];
+                    }
+                }
+                if (announce && !announce->message.empty())
+                {
+                    BroadcastMessage(announce->message.c_str());
+                }
+
+                if (g_settings.lockLoginsSeconds > 0)
+                {
+                    if (left <= g_settings.lockLoginsSeconds) { LockLogins(); }
+                    else                                     { UnlockLogins(); }   // after ADMIN_EXTEND
+                }
+
+                if (left <= 0)
+                {
+                    BeginShutdown(g_reason);
+                }
+                return;
+            }
+
+            case Phase::ScriptDelay:
+                if (now - g_phaseStart >= std::chrono::seconds(g_settings.shutdownDelaySeconds))
+                {
+                    BootAll();
+                    g_phase = Phase::Boot;
+                    g_phaseStart = now;
+                }
+                return;
+
+            case Phase::Boot:
+            {
+                int left = PlayerCount();
+                if (left == 0 || now - g_phaseStart >= std::chrono::seconds(g_settings.bootTimeoutSeconds))
+                {
+                    if (left > 0)
+                    {
+                        GetLogger()("{} player(s) still listed after {} seconds; closing anyway.",
+                                    left, g_settings.bootTimeoutSeconds);
+                    }
+                    GetLogger()("waiting {} seconds for exit scripts.", g_settings.drainSeconds);
+                    g_phase = Phase::Drain;
+                    g_phaseStart = now;
+                }
+                else if (now - g_lastBoot >= kRebootInterval)
+                {
+                    BootAll();
+                }
+                return;
+            }
+
+            case Phase::Drain:
+                // Late joiner: boot them and restart the wait.
+                if (PlayerCount() > 0 && now - g_lastBoot >= kRebootInterval)
+                {
+                    BootAll();
+                    g_phaseStart = now;
+                }
+                if (now - g_phaseStart >= std::chrono::seconds(g_settings.drainSeconds))
+                {
+                    g_phase = Phase::Closed;
+                    UnlockLogins();
+                    GetLogger()("closing ({}).", g_reason);
+                    Shutdown();
+                }
+                return;
+
+            case Phase::Closed:
+                return;
+        }
+    }
+
+    /// Subclassed so the timer runs on the window's (main) thread.
+    LRESULT CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    {
+        if (msg == g_msgStart)
+        {
+            SetTimer(hwnd, kTimerId, 250, nullptr);
+            if (g_settings.enabled)
+            {
+                g_scheduled = true;
+                g_target = Clock::now() + std::chrono::duration_cast<Clock::duration>(
+                    std::chrono::duration<double>(g_settings.everyHours * 3600.0));
+                ResetWarnings();
+                GetLogger()("next restart in {:.0f} minutes.", SecondsLeft() / 60.0);
+            }
+            return 0;
+        }
+        if (msg == g_msgStop)
+        {
+            BeginShutdown("service stop");
+            return 0;
+        }
+        if (msg == WM_TIMER && wParam == kTimerId)
+        {
+            Tick();
+            return 0;
+        }
+
+        return CallWindowProcW(g_originalProc, hwnd, msg, wParam, lParam);
+    }
+
+    /// Waits for the window, hooks it, then passes service stops to the window thread.
+    void WatchThread()
+    {
+        HWND hwnd = nullptr;
+        while (!(hwnd = ServerWindow()))
+        {
+            Sleep(1000);
+        }
+
+        g_originalProc = reinterpret_cast<WNDPROC>(
+            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&DialogProc)));
+        if (!g_originalProc)
+        {
+            GetLogger()("could not hook the admin window (error {}); restarts will not run.", GetLastError());
+            return;
+        }
+        PostMessageW(hwnd, g_msgStart, 0, 0);
+
+        while (WaitForSingleObject(g_stopEvent, INFINITE) == WAIT_OBJECT_0)
+        {
+            PostMessageW(hwnd, g_msgStop, 0, 0);
+        }
     }
 
     class XpSrvAdmin : public nwn2::PluginBase
@@ -277,6 +678,23 @@ namespace
         const char* GetPluginId() const override
         {
             return "SRVADMIN";
+        }
+
+        void OnInitialize(nwn2::PluginHost host) override
+        {
+            g_host = host;
+            g_settings = LoadSettings();
+            GetLogger()("scheduled restarts {}{}.", g_settings.enabled ? "on, every " : "off",
+                        g_settings.enabled ? std::format("{} h", g_settings.everyHours) : "");
+
+            g_msgStart = RegisterWindowMessageW(L"NWN2ServerMod.SrvAdmin.Start");
+            g_msgStop = RegisterWindowMessageW(L"NWN2ServerMod.SrvAdmin.Stop");
+
+            // Set by the NWN2ServerMod service on stop.
+            std::wstring name = L"Local\\NWN2ServerMod.Shutdown." + std::to_wstring(GetCurrentProcessId());
+            g_stopEvent = CreateEventW(nullptr, FALSE, FALSE, name.c_str());
+
+            std::thread(WatchThread).detach();
         }
 
         void OnNWNXSetString(const char* function, const char* param1, int param2, const char* value) override
@@ -295,7 +713,7 @@ namespace
             std::string_view fn(function ? function : "");
 
             if (fn == "GET SUBCLASS")    { result.Set("SRVADMIN"); }
-            else if (fn == "GET VERSION")     { result.Set("0.0.3"); }
+            else if (fn == "GET VERSION")     { result.Set("0.1.0"); }
             else if (fn == "GET DESCRIPTION") { result.Set("This plugin provides server administration functions."); }
         }
 
@@ -322,6 +740,8 @@ namespace
             if (fn == "SETDISABLEOVERRIDE")     return SetCheckbox(IDC_DISABLEOVERRIDE_BOX, IsTrue(param1), "disable client override folders");
             if (fn == "SETDISABLECUSTOMGUI")    return SetCheckbox(IDC_DISABLECUSTOMGUI_BOX, IsTrue(param1), "disable client custom GUI");
             if (fn == "SHUTDOWNNWN2SERVER")     return Shutdown();
+            if (fn == "ADMIN_EXTEND")           return AdminExtend();
+            if (fn == "ADMIN_REBOOT")           return AdminReboot();
 
             if (fn == "BANPLAYERCDKEY")
             {
