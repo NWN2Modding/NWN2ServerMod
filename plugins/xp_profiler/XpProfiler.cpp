@@ -52,6 +52,8 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <format>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -100,12 +102,20 @@ namespace
 
     Logger& GetLogger()
     {
-        static Logger logger(OwnPath().replace_extension(L".log"), true, true);
+        // File only. This plugin's output is a bulk statistics table, and the other two sinks cost
+        // per line: stdout goes nowhere on a service, and OutputDebugStringW raises and swallows
+        // an exception on every call when no debugger is attached. Neither is worth paying for on
+        // the main thread from inside the script hook.
+        static Logger logger(OwnPath().replace_extension(L".log"), false, false);
         return logger;
     }
 
-    /// True if size bytes at address are committed and readable. Used before dereferencing an
-    /// offset into an engine structure, since a wrong offset would otherwise fault the server.
+    /// True if size bytes at address are committed and readable.
+    ///
+    /// Called once per virtual machine to check the layout, and never on the per-script path:
+    /// VirtualQuery takes the process-wide address space lock, so its cost depends on what every
+    /// other thread happens to be doing. The per-call reads are guarded by SEH instead - see
+    /// Profiler::TryReadName.
     bool IsReadable(const void* address, size_t size)
     {
         if (!address)
@@ -341,6 +351,59 @@ namespace
             }
         }
 
+        /// Three states, because "no script name yet" is normal and "could not read it" is not.
+        enum class NameRead { Ok, None, Bad };
+
+        /// Copies the script name out of the virtual machine without probing memory first.
+        ///
+        /// What this replaces cost three VirtualQuery calls on every script the server ran, to
+        /// check an offset that cannot change after the first one. VirtualQuery takes the
+        /// process-wide address space lock, so each call cost whatever the rest of the process was
+        /// doing to its address space at the time - on a busy boot that measured around 1.8 ms,
+        /// which made this plugin the most expensive thing on the server's main thread.
+        ///
+        /// SEH gives the same protection for nothing. It is table-driven on x64, so it costs
+        /// nothing unless a fault actually happens, and the fault it catches is exactly the one a
+        /// wrong offset causes - after which the plugin disables itself as it did before. The
+        /// plausible-length and printable-text checks still catch a valid pointer to the wrong
+        /// field, which no memory probe could have caught either.
+        ///
+        /// Separate function, plain buffer: MSVC will not compile __try in a function that also
+        /// holds objects needing unwinding.
+        static NameRead TryReadName(const unsigned char* base, char* out, size_t outSize,
+                                    size_t& used) noexcept
+        {
+            used = 0;
+            __try
+            {
+                const char* text =
+                    *reinterpret_cast<const char* const*>(base + kLastScriptRunString);
+                uint32_t length = *reinterpret_cast<const uint32_t*>(base + kLastScriptRunLength);
+
+                if (!text)
+                {
+                    return NameRead::None;      // no script name yet; not an error
+                }
+
+                // A resref is 16 characters; the buffer around it is small. Anything wild here
+                // means the offset is wrong for this build rather than that the script has a long
+                // name.
+                if (length == 0 || length > 1024)
+                {
+                    return NameRead::Bad;
+                }
+
+                used = ::strnlen(text, (std::min)(static_cast<size_t>(length), outSize - 1));
+                ::memcpy(out, text, used);
+                return NameRead::Ok;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                used = 0;
+                return NameRead::Bad;
+            }
+        }
+
         /// Reads CVirtualMachine::m_sLastScriptRun, refusing anything that does not look like a
         /// script name. A wrong offset on an unverified build would otherwise hand us garbage, or
         /// fault the server.
@@ -348,30 +411,40 @@ namespace
         {
             auto base = static_cast<const unsigned char*>(pVM);
 
-            if (!IsReadable(base + kLastScriptRunString, sizeof(void*)) ||
-                !IsReadable(base + kLastScriptRunLength, sizeof(uint32_t)))
+            // Once per virtual machine rather than once per script. The engine reaches this
+            // through the g_pVirtualMachine singleton, so the same object is passed for the life
+            // of the process: an offset that is readable on the first script is readable on every
+            // later one.
+            if (base != _validated)
             {
-                Disable("the virtual machine does not have a readable CExoString at +0x4F0");
+                if (!IsReadable(base + kLastScriptRunString, sizeof(void*)) ||
+                    !IsReadable(base + kLastScriptRunLength, sizeof(uint32_t)))
+                {
+                    Disable("the virtual machine does not have a readable CExoString at +0x4F0");
+                    return false;
+                }
+
+                _validated = base;
+            }
+
+            // 64 bytes is a 16-character resref several times over. Kept small deliberately:
+            // scripts run scripts, so this frame can be live up to kMaxCallDepth times at once.
+            // A longer name is truncated rather than refused, which a resref cannot reach.
+            char name[64];
+            size_t used = 0;
+
+            switch (TryReadName(base, name, sizeof(name), used))
+            {
+            case NameRead::None:
                 return false;
-            }
-
-            const char* text = *reinterpret_cast<const char* const*>(base + kLastScriptRunString);
-            uint32_t length  = *reinterpret_cast<const uint32_t*>(base + kLastScriptRunLength);
-
-            if (!text)
-            {
-                return false;   // no script name yet; not an error
-            }
-
-            // A resref is 16 characters; the buffer around it is small. Anything wild here means
-            // the offset is wrong for this build rather than that the script has a long name.
-            if (length == 0 || length > 1024 || !IsReadable(text, length))
-            {
-                Disable("the script name at +0x4F0 has an implausible length");
+            case NameRead::Bad:
+                Disable("the script name at +0x4F0 could not be read, or had an implausible "
+                        "length");
                 return false;
+            case NameRead::Ok:
+                break;
             }
 
-            size_t used = ::strnlen(text, length);
             if (used == 0)
             {
                 return false;   // empty script name, which the original also skipped
@@ -380,7 +453,7 @@ namespace
             // Script names are resrefs: printable, no spaces or control characters.
             for (size_t i = 0; i < used; ++i)
             {
-                unsigned char c = static_cast<unsigned char>(text[i]);
+                unsigned char c = static_cast<unsigned char>(name[i]);
                 if (c < 0x21 || c > 0x7E)
                 {
                     Disable("the script name at +0x4F0 is not printable text");
@@ -388,7 +461,7 @@ namespace
                 }
             }
 
-            out.assign(text, used);
+            out.assign(name, used);
             return true;
         }
 
@@ -463,30 +536,40 @@ namespace
                 }
             }
 
-            GetLogger()("");
-            GetLogger()("script statistics, last {} ms", sinceMicroseconds / 1000);
-            GetLogger()("{:<{}}  {:>12} {:>8} {:>10}   {:>12} {:>8}",
-                        "script", width, "total us", "calls", "us/call", "window us", "calls");
-            GetLogger()("{:-<{}}", "", width + 56);
+            // Assembled here and written once. This used to be a logger call per script row,
+            // and each of those took the logger's lock, wrote, and flushed the file - on the main
+            // thread, from inside the script hook, for every script the server had ever run.
+            //
+            // One entry instead of many changes the log's shape: only the first line of a table
+            // carries a timestamp now, where before every row had its own.
+            std::string table;
+            table.reserve(rows.size() * 96 + 256);
+            auto out = std::back_inserter(table);
+
+            std::format_to(out, "script statistics, last {} ms\n", sinceMicroseconds / 1000);
+            std::format_to(out, "{:<{}}  {:>12} {:>8} {:>10}   {:>12} {:>8}\n",
+                           "script", width, "total us", "calls", "us/call", "window us", "calls");
+            std::format_to(out, "{:-<{}}\n", "", width + 56);
 
             for (auto* row : rows)
             {
                 const ScriptStats& s = row->second;
 
-                GetLogger()("{:<{}}  {:>12} {:>8} {:>10}   {:>12} {:>8} {}",
-                            row->first, width,
-                            s.microseconds, s.calls,
-                            s.calls ? s.microseconds / s.calls : 0,
-                            s.windowMicroseconds, s.windowCalls,
-                            s.windowCalls > 0 ? "*" : "");
+                std::format_to(out, "{:<{}}  {:>12} {:>8} {:>10}   {:>12} {:>8} {}\n",
+                               row->first, width,
+                               s.microseconds, s.calls,
+                               s.calls ? s.microseconds / s.calls : 0,
+                               s.windowMicroseconds, s.windowCalls,
+                               s.windowCalls > 0 ? "*" : "");
             }
 
-            GetLogger()("{:-<{}}", "", width + 56);
-            GetLogger()("since start: {} scripts, {} calls, {} ms  |  this window: {} scripts, "
-                        "{} calls, {} ms",
-                        rows.size(), _totalCalls, _totalMicroseconds / 1000,
-                        windowScripts, windowCalls, windowMicroseconds / 1000);
-            GetLogger()("");
+            std::format_to(out, "{:-<{}}\n", "", width + 56);
+            std::format_to(out, "since start: {} scripts, {} calls, {} ms  |  this window: "
+                                "{} scripts, {} calls, {} ms\n",
+                           rows.size(), _totalCalls, _totalMicroseconds / 1000,
+                           windowScripts, windowCalls, windowMicroseconds / 1000);
+
+            GetLogger()("{}", table);
 
             for (auto& entry : _stats)
             {
@@ -499,6 +582,9 @@ namespace
         bool _timeScriptParts = true;
         bool _disabled = false;
         uint64_t _flushMicroseconds = 10000000;
+
+        /// The virtual machine whose layout has already been checked, so it is checked once.
+        const unsigned char* _validated = nullptr;
 
         LARGE_INTEGER _frequency{};
         LARGE_INTEGER _lastFlush{};
