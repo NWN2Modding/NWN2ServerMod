@@ -239,19 +239,15 @@ ones in the `.UTC` blueprint, which the toolset or any GFF editor will show.
 
 **No engine addresses.** The original found the creature through a hardcoded `CAppManager`
 pointer and `CServerExoApp::GetCreatureByGameObjectID`, then called `CNWSCreature::GetSoundSet`.
-That middle function cannot be resolved by signature on x64 — it is one of 36 byte-identical
-siblings generated from the same template, differing only in a RIP-relative displacement.
+That middle function cannot be resolved by signature on x64.
 
-None of it is necessary. `SoundSetFile` is a field in the creature's own serialized form, so this
+This method is not necessary. `SoundSetFile` is a field in the creature's own serialized form, so this
 port asks the engine to serialize the creature through SCORCO and reads the field out of the GFF.
-That works identically on the GOG and Steam builds and cannot be moved by a future patch, because
-GFF is the module file format.
 
 It is also closer to the truth than the original: SCORCO serializes live state rather than the
 blueprint, so anything that changed a creature's soundset at runtime is reflected.
 
-Verified on both an NPC and a player character — NWN2 will serialize a PC through SCORCO, which
-NWN1 refused to do.
+Verified on both an NPC and a player character.
 
 ### Cost
 
@@ -264,7 +260,7 @@ for the same creature.
 
 Only types stored inline in the GFF field entry can be read: the integer types up to 32 bits.
 Strings, floats and nested structs keep an *offset* in that slot instead, so returning it as a
-value would be nonsense — those log the type and return nothing rather than guessing.
+value would be nonsense..
 
 ---
 
@@ -279,7 +275,7 @@ but that validation is still outstanding.
 ### Building
 
 This is the only port with a prerequisite, and it is skipped rather than fatal when absent, so the
-other seven still build with no setup:
+others still build with no setup:
 
 ```bash
 vcpkg install libmariadb:x64-windows-static
